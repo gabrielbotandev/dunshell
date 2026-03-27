@@ -6,12 +6,18 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	figure "github.com/common-nighthawk/go-figure"
 
 	"dunshell/internal/game"
 )
 
-var titleArt = figure.NewFigure(game.GameTitle, "small", true).Slicify()
+var titleArt = []string{
+	"  ▄▄▄▄▄▄                                ▄▄ ▄▄ ",
+	" █▀██▀▀██                    █▄          ██ ██",
+	"   ██   ██       ▄           ██          ██ ██",
+	"   ██   ██ ██ ██ ████▄ ▄██▀█ ████▄ ▄█▀█▄ ██ ██",
+	" ▄ ██   ██ ██ ██ ██ ██ ▀███▄ ██ ██ ██▄█▀ ██ ██",
+	" ▀██▀███▀ ▄▀██▀█▄██ ▀██▄▄██▀▄██ ██▄▀█▄▄▄▄██▄██",
+}
 
 func (m *Model) renderTopHeader(width int) string {
 	return m.styles.HeaderBar.Copy().Width(width).Render(game.GameTitle)
