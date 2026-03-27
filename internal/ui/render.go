@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	figure "github.com/common-nighthawk/go-figure"
 
 	"dunshell/internal/game"
@@ -13,37 +13,33 @@ import (
 
 var titleArt = figure.NewFigure(game.GameTitle, "small", true).Slicify()
 
-func (m Model) renderTopHeader(width int) string {
+func (m *Model) renderTopHeader(width int) string {
 	return m.styles.HeaderBar.Copy().Width(width).Render(game.GameTitle)
 }
 
-func (m Model) renderScreen(content string, width int, height int, hPos lipgloss.Position, vPos lipgloss.Position) string {
+func (m *Model) renderScreen(content string, width int, height int, hPos lipgloss.Position, vPos lipgloss.Position) string {
 	header := m.renderTopHeader(width)
 	availableHeight := max(1, height-lipgloss.Height(header))
 	body := lipgloss.Place(width, availableHeight, hPos, vPos, content)
 	return lipgloss.JoinVertical(lipgloss.Left, header, body)
 }
 
-func (m Model) gameplayMetrics() (int, int, int, int, int) {
-	width := max(80, m.width)
-	height := max(28, m.height)
+func (m *Model) gameplayMetrics() (int, int, int, int, int) {
+	width := max(88, m.width)
+	height := max(30, m.height)
 	headerHeight := lipgloss.Height(m.renderTopHeader(width))
 	footerHeight := lipgloss.Height(m.styles.Footer.Render(m.help.View(m.keys)))
-	availableHeight := max(20, height-headerHeight-footerHeight)
-	logHeight := clamp(height/4, 7, 10)
-	maxLogHeight := max(7, availableHeight-12)
-	if logHeight > maxLogHeight {
-		logHeight = maxLogHeight
+	availableHeight := max(22, height-headerHeight-footerHeight)
+	logHeight := clamp(height/4, 6, 9)
+	if availableHeight-logHeight < 14 {
+		logHeight = max(6, availableHeight-14)
 	}
-	bodyHeight := max(12, availableHeight-logHeight)
-	if width >= 112 && bodyHeight%2 != 0 {
-		bodyHeight--
-	}
-	sidebarWidth := 34
+	bodyHeight := max(14, availableHeight-logHeight)
+	sidebarWidth := clamp(width/3, 34, 40)
 	return width, height, bodyHeight, logHeight, sidebarWidth
 }
 
-func (m Model) viewTitle() string {
+func (m *Model) viewTitle() string {
 	width := max(80, m.width)
 	height := max(28, m.height)
 
@@ -52,114 +48,145 @@ func (m Model) viewTitle() string {
 		titleLines = append(titleLines, m.styles.Title.Render(line))
 	}
 
-	menuLabels := []string{"New Run", "Help", "Quit"}
+	menuLabels := []string{"New Run", "Field Guide", "Quit"}
 	menuLines := make([]string, 0, len(menuLabels))
 	for index, label := range menuLabels {
+		line := "  " + m.styles.MenuItem.Render(label)
 		if index == m.menuIndex {
-			menuLines = append(menuLines, m.styles.MenuCursor.Render(">")+" "+m.styles.MenuSelected.Render(label))
-			continue
+			line = m.renderSelectedText("› "+label, 30)
 		}
-		menuLines = append(menuLines, "  "+m.styles.MenuItem.Render(label))
+		menuLines = append(menuLines, line)
 	}
 
-	copy := wrapText("Delve beneath the drowned abbey, outfight its hungry choir, and return with the Cinder Crown before the dark learns your name.", 66)
+	copy := wrapText("Descend beneath the drowned abbey, strip its halls bare, and carry the Cinder Crown back through whatever still remembers your footsteps.", 68)
 	seedLine := m.styles.Muted.Render("Seed: random each run")
 	if m.hasLockedSeed {
 		seedLine = m.styles.Muted.Render("Seed locked to " + fmt.Sprintf("%d", m.lockedSeed))
 	}
 
 	panelBody := strings.Join([]string{
-		m.styles.Subtitle.Render("A terminal roguelike forged with Bubble Tea"),
+		m.styles.Subtitle.Render("A polished terminal roguelike carved in Bubble Tea"),
 		"",
 		copy,
 		"",
 		strings.Join(menuLines, "\n"),
 		"",
 		seedLine,
-		m.styles.Dim.Render("Controls: up/down or w/s; letters work in either case; Enter selects"),
+		m.styles.PanelNote.Render("Arrows or W/S move through menus. Enter confirms."),
 	}, "\n")
 
-	panel := m.styles.box("Start Menu", panelBody, 72, 0)
+	panel := m.styles.focusBox("Start Menu", panelBody, 74, 0)
 	content := lipgloss.JoinVertical(lipgloss.Center, strings.Join(titleLines, "\n"), "", panel)
 	return m.renderScreen(content, width, height, lipgloss.Center, lipgloss.Center)
 }
 
-func (m Model) viewHelp() string {
-	width := max(90, m.width)
-	height := max(32, m.height)
-	helpView := help.New()
-	helpView.Width = min(width-8, 96)
-	helpView.ShowAll = true
+func (m *Model) viewHelp() string {
+	width := max(96, m.width)
+	height := max(34, m.height)
 
 	legend := []string{
-		m.styles.Player.Render("@") + " You",
-		m.styles.TileWall.Render("#") + " Wall",
-		m.styles.TileDoor.Render("+") + " Closed door",
-		m.styles.TileStairs.Render(">") + " Stairs down",
+		m.styles.cellGlyph(m.styles.TileFloorVisible, "■", "#84d06f", true) + " You",
+		m.styles.TileWallVisible.Render("█") + " Wall",
+		m.styles.TileWallClearedVisible.Render("█") + " Cleared chamber wall",
+		m.styles.cellGlyph(m.styles.TileFloorVisible, "+", "#d4a66d", true) + " Closed door",
+		m.styles.cellGlyph(m.styles.TileFloorVisible, "/", "#9f7f61", false) + " Open door",
+		m.styles.cellGlyph(m.styles.TileFloorVisible, "▾", "#9bc1d8", true) + " Stairs down",
 		m.styles.colorGlyph('!', "#d16078", true) + " Consumable",
 		m.styles.colorGlyph(')', "#f2c97d", true) + " Weapon",
 		m.styles.colorGlyph('[', "#7ea8c7", true) + " Armor",
 		m.styles.colorGlyph('=', "#f6db7d", true) + " Charm",
-		m.styles.colorGlyph('&', "#ffb347", true) + " Cinder Crown",
 	}
 
-	tips := wrapText("Movement is turn-based. Bump enemies to attack, use doors to break line of sight, drink Sunbrew before committing to a hard fight, and do not sit on poison longer than you have to.", 72)
 	body := strings.Join([]string{
-		m.styles.Subtitle.Render("Controls"),
-		helpView.View(m.keys),
+		m.renderHelpSection("Movement", []string{
+			"Arrows or W/A/S/D move one tile at a time.",
+			"Walking into an enemy attacks it.",
+			"Press . to wait and let the dungeon move.",
+		}),
 		"",
-		m.styles.Subtitle.Render("Legend"),
-		strings.Join(legend, "\n"),
+		m.renderHelpSection("Actions", []string{
+			"E acts on your tile. Loot is gathered before stairs are offered.",
+			"C drinks the weakest healing item in your pack.",
+			"I opens the inventory sidebar. Esc closes the active overlay.",
+			"Q opens a safe quit prompt.",
+		}),
 		"",
-		m.styles.Subtitle.Render("Field Notes"),
-		tips,
+		m.renderHelpSection("Inventory", []string{
+			"Left or right switches between Pack and Equipped.",
+			"E or Enter performs the primary action on the selected item.",
+			"U directly uses a consumable from the pack.",
+			"Equipment is removed by selecting it in the Equipped pane and pressing E or Enter.",
+		}),
 		"",
-		m.styles.Dim.Render("Press Esc, Enter, or ? to return."),
+		m.renderHelpSection("Legend", legend),
+		"",
+		m.renderHelpSection("Field Notes", []string{
+			wrapText("Blue chamber walls mark rooms that have been fully laid bare: explored, opened, cleansed, and picked clean. The stair prompt tells you what the floor still keeps from you.", 78),
+			m.styles.PanelNote.Render("Press Esc, Enter, or ? to return."),
+		}),
 	}, "\n")
 
-	panel := m.styles.box("How To Survive", body, min(width-4, 100), 0)
+	panel := m.styles.box("Field Guide", body, min(width-4, 104), 0)
 	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
 }
 
-func (m Model) viewGame() string {
+func (m *Model) renderHelpSection(title string, lines []string) string {
+	return strings.Join([]string{
+		m.styles.Subtitle.Render(title),
+		strings.Join(lines, "\n"),
+	}, "\n")
+}
+
+func (m *Model) viewGame() string {
 	if m.game == nil {
 		return ""
 	}
 
 	width, height, bodyHeight, logHeight, sidebarWidth := m.gameplayMetrics()
 	footer := m.styles.Footer.Render(m.help.View(m.keys))
+	headerHeight := lipgloss.Height(m.renderTopHeader(width))
 
+	m.mapViewport = mapViewportState{}
+
+	bodyOriginY := headerHeight
 	var body string
 	if width >= 112 {
-		mapWidth := max(36, width-sidebarWidth-5)
-		mapPanel := m.renderMapPanel(mapWidth, bodyHeight)
-		sidePanel := m.renderSidebar(sidebarWidth, bodyHeight)
+		mapWidth := max(46, width-sidebarWidth-1)
+		mapPanel := m.renderMapPanel(mapWidth, bodyHeight, 0, bodyOriginY)
+		sideX := mapWidth + 1
+		sidePanel := m.renderSidebar(sidebarWidth, bodyHeight, sideX, bodyOriginY)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, mapPanel, " ", sidePanel)
 	} else {
-		mapPanel := m.renderMapPanel(width-2, max(10, bodyHeight-14))
-		sidePanel := m.renderSidebar(width-2, 12)
+		sidebarHeight := max(10, bodyHeight-1)
+		mapHeight := max(9, bodyHeight-sidebarHeight)
+		if mapHeight+sidebarHeight > bodyHeight {
+			sidebarHeight = max(8, bodyHeight-mapHeight)
+		}
+		mapPanel := m.renderMapPanel(width, mapHeight, 0, bodyOriginY)
+		sidePanel := m.renderSidebar(width, sidebarHeight, 0, bodyOriginY+mapHeight)
 		body = lipgloss.JoinVertical(lipgloss.Left, mapPanel, sidePanel)
 	}
 
-	logPanel := m.renderLog(width-2, logHeight)
+	logY := bodyOriginY + lipgloss.Height(body)
+	logPanel := m.renderLog(width, logHeight, 0, logY)
 	content := lipgloss.JoinVertical(lipgloss.Left, body, logPanel, footer)
 	return m.renderScreen(content, width, height, lipgloss.Left, lipgloss.Top)
 }
 
-func (m Model) viewQuitPrompt() string {
+func (m *Model) viewQuitPrompt() string {
 	width := max(60, m.width)
 	height := max(20, m.height)
 	body := strings.Join([]string{
-		wrapText("Leave this run? Your current descent will be lost.", 36),
+		wrapText("Leave this run? The abbey will keep the shape of your descent, but not the life inside it.", 40),
 		"",
-		m.styles.Dim.Render("Press y/Y to quit, n/N or esc to return."),
+		m.styles.PanelNote.Render("Press y to quit, n or Esc to return."),
 	}, "\n")
-	panel := m.styles.box("Quit Run", body, 44, 0)
+	panel := m.styles.modalBox("Quit Run", body, 46)
 	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
 }
 
-func (m Model) viewOutcome(victory bool) string {
-	width := max(80, m.width)
+func (m *Model) viewOutcome(victory bool) string {
+	width := max(82, m.width)
 	height := max(28, m.height)
 	summary := m.game.Summary()
 
@@ -169,7 +196,7 @@ func (m Model) viewOutcome(victory bool) string {
 	if victory {
 		title = "Cinder Crown Claimed"
 		accent = m.styles.Success
-		copy = "You return from the abbey carrying a relic it kept for centuries. The bells above will never sound the same again."
+		copy = "You return carrying a relic the abbey kept for centuries. The bells above will never ring the same way again."
 	} else {
 		title = "Run Extinguished"
 		accent = m.styles.Danger
@@ -188,21 +215,28 @@ func (m Model) viewOutcome(victory bool) string {
 		"Kills     " + fmt.Sprintf("%d", summary.Kills),
 		"Turns     " + fmt.Sprintf("%d", summary.Turn),
 		"",
-		m.styles.Dim.Render("Press Enter for the title screen, n/N for a new run, q/Q to quit."),
+		m.styles.PanelNote.Render("Press Enter for the title screen, n for a new run, q to quit."),
 	}
 
-	panel := m.styles.box(title, strings.Join(stats, "\n"), 70, 0)
+	panel := m.styles.modalBox(title, strings.Join(stats, "\n"), 70)
 	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
 }
 
-func (m Model) renderMapPanel(width int, height int) string {
-	innerWidth := max(18, width-4)
+func (m *Model) renderMapPanel(width int, height int, originX int, originY int) string {
+	innerWidth := max(22, width-4)
 	innerHeight := max(8, height-4)
 	player := m.game.Player
 	floor := m.game.Floor
 
 	cameraX := clamp(player.Pos.X-innerWidth/2, 0, max(0, floor.Width-innerWidth))
 	cameraY := clamp(player.Pos.Y-innerHeight/2, 0, max(0, floor.Height-innerHeight))
+
+	m.mapViewport = mapViewportState{
+		Panel:   rect{X: originX, Y: originY, W: width, H: height},
+		Content: rect{X: originX + 2, Y: originY + 2, W: innerWidth, H: innerHeight},
+		CameraX: cameraX,
+		CameraY: cameraY,
+	}
 
 	enemyMap := make(map[game.Position]*game.Enemy, len(floor.Enemies))
 	for _, enemy := range floor.Enemies {
@@ -218,73 +252,230 @@ func (m Model) renderMapPanel(width int, height int) string {
 		}
 	}
 
-	rows := make([]string, 0, innerHeight)
+	roomStates := floor.RoomStates()
+	cells := make([][]string, innerHeight)
 	for y := 0; y < innerHeight; y++ {
-		var row strings.Builder
+		cells[y] = make([]string, innerWidth)
 		for x := 0; x < innerWidth; x++ {
 			pos := game.Position{X: cameraX + x, Y: cameraY + y}
-			row.WriteString(m.renderMapCell(pos, enemyMap, itemMap))
+			cells[y][x] = m.renderMapCell(pos, enemyMap, itemMap, roomStates)
 		}
-		rows = append(rows, row.String())
+	}
+
+	rows := m.renderCellRows(cells)
+	if m.overlay == overlayDescend {
+		rows = m.renderDescendPrompt(cells)
 	}
 
 	body := strings.Join(rows, "\n")
+	if m.overlay == overlayDescend {
+		return m.styles.focusBox("Dungeon", body, width, height)
+	}
 	return m.styles.box("Dungeon", body, width, height)
 }
 
-func (m Model) renderMapCell(pos game.Position, enemies map[game.Position]*game.Enemy, items map[game.Position]game.GroundItem) string {
+func (m *Model) renderCellRows(cells [][]string) []string {
+	rows := make([]string, len(cells))
+	for y := range cells {
+		rows[y] = strings.Join(cells[y], "")
+	}
+	return rows
+}
+
+func (m *Model) renderMapCell(pos game.Position, enemies map[game.Position]*game.Enemy, items map[game.Position]game.GroundItem, roomStates []game.RoomState) string {
 	floor := m.game.Floor
 	if !floor.InBounds(pos) {
 		return " "
 	}
+
+	visible := floor.IsVisible(pos)
+	explored := floor.IsExplored(pos)
+	if !explored {
+		return m.styles.Void.Render(" ")
+	}
+
 	if m.game.Player.Pos.Equals(pos) {
-		return m.styles.Player.Render("@")
+		base := m.floorCellStyle(pos, visible, roomStates)
+		return m.styles.cellGlyph(base, "■", "#84d06f", true)
 	}
+
 	if enemy, ok := enemies[pos]; ok {
-		return m.styles.colorGlyph(enemy.Template.Glyph, enemy.Template.Tint, true)
+		base := m.floorCellStyle(pos, visible, roomStates)
+		return m.styles.cellGlyph(base, string(enemy.Template.Glyph), enemy.Template.Tint, true)
 	}
+
 	if item, ok := items[pos]; ok {
-		return m.styles.colorGlyph(item.Item.Glyph, item.Item.Tint, true)
-	}
-	if !floor.IsExplored(pos) {
-		return " "
+		base := m.floorCellStyle(pos, visible, roomStates)
+		return m.styles.cellGlyph(base, string(item.Item.Glyph), item.Item.Tint, true)
 	}
 
 	tile := floor.TileAt(pos)
-	visible := floor.IsVisible(pos)
 	switch tile {
 	case game.TileWall:
-		if visible {
-			return m.styles.TileWall.Render("#")
+		if m.wallClearedContext(pos, roomStates) {
+			if visible {
+				return m.styles.TileWallClearedVisible.Render("█")
+			}
+			return m.styles.TileWallClearedSeen.Render("▓")
 		}
-		return m.styles.TileWallSeen.Render("#")
+		if visible {
+			return m.styles.TileWallVisible.Render("█")
+		}
+		return m.styles.TileWallSeen.Render("▓")
 	case game.TileFloor:
-		if visible {
-			return m.styles.TileFloor.Render(".")
-		}
-		return m.styles.TileFloorSeen.Render(".")
+		return m.floorCellStyle(pos, visible, roomStates).Render(" ")
 	case game.TileDoorClosed:
-		if visible {
-			return m.styles.TileDoor.Render("+")
-		}
-		return m.styles.TileDoorSeen.Render("+")
+		base := m.doorCellStyle(pos, visible, roomStates)
+		return m.styles.cellGlyph(base, "+", "#d4a66d", true)
 	case game.TileDoorOpen:
-		if visible {
-			return m.styles.TileDoor.Render("/")
-		}
-		return m.styles.TileDoorSeen.Render("/")
+		base := m.doorCellStyle(pos, visible, roomStates)
+		return m.styles.cellGlyph(base, "/", "#8b715c", false)
 	case game.TileStairsDown:
-		return m.styles.TileStairs.Render(">")
+		base := m.floorCellStyle(pos, visible, roomStates)
+		tint := "#9bc1d8"
+		if !visible {
+			tint = "#5c7686"
+		}
+		return m.styles.cellGlyph(base, "▾", tint, true)
 	default:
 		return " "
 	}
 }
 
-func (m Model) renderSidebar(width int, height int) string {
-	if m.overlay == overlayInventory {
-		return m.renderInventorySidebar(width, height)
+func (m *Model) floorCellStyle(pos game.Position, visible bool, roomStates []game.RoomState) lipgloss.Style {
+	cleared := m.roomClearedContext(pos, roomStates)
+	switch {
+	case visible && cleared:
+		return m.styles.TileFloorClearedVisible
+	case visible:
+		return m.styles.TileFloorVisible
+	case cleared:
+		return m.styles.TileFloorClearedSeen
+	default:
+		return m.styles.TileFloorSeen
+	}
+}
+
+func (m *Model) doorCellStyle(pos game.Position, visible bool, roomStates []game.RoomState) lipgloss.Style {
+	if m.wallClearedContext(pos, roomStates) {
+		if visible {
+			return m.styles.TileFloorClearedVisible
+		}
+		return m.styles.TileFloorClearedSeen
+	}
+	if visible {
+		return m.styles.TileFloorVisible
+	}
+	return m.styles.TileFloorSeen
+}
+
+func (m *Model) roomClearedContext(pos game.Position, roomStates []game.RoomState) bool {
+	roomIndex := m.game.Floor.RoomIndexAt(pos)
+	return roomIndex >= 0 && roomStates[roomIndex].Cleared
+}
+
+func (m *Model) wallClearedContext(pos game.Position, roomStates []game.RoomState) bool {
+	for _, roomIndex := range m.game.Floor.AdjacentRoomIndices(pos) {
+		if roomStates[roomIndex].Cleared {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) renderDescendPrompt(cells [][]string) []string {
+	rows := m.renderCellRows(cells)
+	completion := m.game.Floor.Completion()
+	promptWidth := min(46, max(24, m.mapViewport.Content.W-2))
+	if promptWidth > m.mapViewport.Content.W {
+		promptWidth = m.mapViewport.Content.W
+	}
+	promptText := m.renderDescendPromptText(completion, max(18, promptWidth-4))
+	prompt := m.styles.modalBox("Stair Mouth", promptText, promptWidth)
+	lines := strings.Split(prompt, "\n")
+
+	stairsX := m.game.Player.Pos.X - m.mapViewport.CameraX
+	stairsY := m.game.Player.Pos.Y - m.mapViewport.CameraY
+	promptHeight := len(lines)
+
+	x := clamp(stairsX-promptWidth/2, 0, max(0, m.mapViewport.Content.W-promptWidth))
+	y := stairsY - promptHeight - 1
+	if y < 0 {
+		y = min(max(0, stairsY+1), max(0, m.mapViewport.Content.H-promptHeight))
+	}
+	y = clamp(y, 0, max(0, m.mapViewport.Content.H-promptHeight))
+
+	for lineIndex, line := range lines {
+		rowIndex := y + lineIndex
+		if rowIndex < 0 || rowIndex >= len(rows) {
+			continue
+		}
+		left := strings.Join(cells[rowIndex][:x], "")
+		rightStart := min(len(cells[rowIndex]), x+promptWidth)
+		right := strings.Join(cells[rowIndex][rightStart:], "")
+		rows[rowIndex] = left + line + right
+	}
+	return rows
+}
+
+func (m *Model) renderDescendPromptText(completion game.FloorCompletion, width int) string {
+	options := m.renderDescendOptions()
+	if completion.Complete() {
+		lines := []string{
+			m.styles.Success.Render(wrapText("The hall behind you lies cold and emptied. Only the deeper ash still keeps a voice.", width)),
+			"",
+			m.styles.PanelNote.Render(wrapText("Do you step into the next dark?", width)),
+			"",
+			options,
+		}
+		return strings.Join(lines, "\n")
 	}
 
+	missing := make([]string, 0, 4)
+	if !completion.FullyExplored() {
+		missing = append(missing, m.styles.Info.Render(fmt.Sprintf("• %d tiles still hide in shadow.", completion.UnexploredTiles)))
+	}
+	if !completion.LootCollected() {
+		missing = append(missing, m.styles.Gold.Render(fmt.Sprintf("• %d spoils still glimmer below.", completion.RemainingItems)))
+	}
+	if !completion.EnemiesCleared() {
+		missing = append(missing, m.styles.Danger.Render(fmt.Sprintf("• %d foes still draw breath.", completion.RemainingEnemies)))
+	}
+	if completion.UnclearedRooms() > 0 {
+		missing = append(missing, m.styles.AccentSoft.Render(fmt.Sprintf("• %d chambers remain unpurged.", completion.UnclearedRooms())))
+	}
+
+	lines := []string{
+		m.styles.Danger.Render(wrapText("The stair offers passage, but this floor still keeps unfinished hungers.", width)),
+		"",
+		strings.Join(missing, "\n"),
+		"",
+		options,
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m *Model) renderDescendOptions() string {
+	yes := " Yes "
+	no := " No "
+	if m.descendPrompt.Choice == 0 {
+		yes = m.styles.ModalChoiceActive.Render(yes)
+		no = m.styles.ModalChoice.Render(no)
+	} else {
+		yes = m.styles.ModalChoice.Render(yes)
+		no = m.styles.ModalChoiceActive.Render(no)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, yes, "  ", no) + "\n" + m.styles.PanelNote.Render("Left/Right choose • Enter confirms • Esc stays")
+}
+
+func (m *Model) renderSidebar(width int, height int, originX int, originY int) string {
+	if m.overlay == overlayInventory {
+		return m.renderInventorySidebar(width, height, originX, originY)
+	}
+	return m.renderStatusSidebar(width, height)
+}
+
+func (m *Model) renderStatusSidebar(width int, height int) string {
 	player := m.game.Player
 	statuses := "Steady"
 	if len(player.Statuses) > 0 {
@@ -295,71 +486,91 @@ func (m Model) renderSidebar(width int, height int) string {
 		statuses = strings.Join(labels, ", ")
 	}
 
+	completion := m.game.Floor.Completion()
 	stats := []string{
-		"HP   " + hpBar(player.HP, player.MaxHP(), 20) + " " + fmt.Sprintf("%d/%d", player.HP, player.MaxHP()),
-		"XP   " + xpBar(player.XP, player.NextLevelXP(), 20) + " " + fmt.Sprintf("%d/%d", player.XP, player.NextLevelXP()),
-		"Lvl  " + fmt.Sprintf("%d", player.Level),
-		"ATK  " + fmt.Sprintf("%d", player.AttackPower()),
-		"DEF  " + fmt.Sprintf("%d", player.DefensePower()),
-		"Gold " + m.styles.Gold.Render(fmt.Sprintf("%d", player.Gold)),
-		"State " + statuses,
+		m.renderStatBar("HP", player.HP, player.MaxHP(), width-4, lipgloss.Color("#c56b78"), lipgloss.Color("#2d1d23")),
+		m.renderStatBar("XP", player.XP, player.NextLevelXP(), width-4, lipgloss.Color("#5d88aa"), lipgloss.Color("#18232d")),
+		"",
+		"Lvl   " + m.styles.AccentSoft.Render(fmt.Sprintf("%d", player.Level)) + "   Gold " + m.styles.Gold.Render(fmt.Sprintf("%d", player.Gold)),
+		"ATK   " + m.styles.Attack.Render(fmt.Sprintf("%d", player.AttackPower())) + "   DEF  " + m.styles.Defense.Render(fmt.Sprintf("%d", player.DefensePower())),
+		"State " + m.renderStateLine(statuses),
 		m.renderQuickHealPreview(),
 	}
 
-	floorInfo := []string{
-		m.game.FloorLabel(),
-		"Explored " + fmt.Sprintf("%d%%", m.game.Floor.ExploredPercent()),
-		"Visible foes " + fmt.Sprintf("%d", len(m.game.VisibleEnemies())),
-		"Visible loot " + fmt.Sprintf("%d", len(m.game.VisibleItems())),
-		"Underfoot " + m.game.TileDescriptionUnderPlayer(),
+	floorLines := []string{
+		m.styles.Muted.Render(m.game.FloorLabel()),
+		m.renderCompletionSummary(completion),
+		"Map   " + m.renderBoolMetric(fmt.Sprintf("%d%%", m.game.Floor.ExploredPercent()), completion.FullyExplored()),
+		"Rooms " + m.renderBoolMetric(fmt.Sprintf("%d/%d", completion.ClearedRooms, completion.TotalRooms), completion.UnclearedRooms() == 0),
+		"Foes  " + m.renderCountMetric(completion.RemainingEnemies),
+		"Loot  " + m.renderCountMetric(completion.RemainingItems),
+		"Under " + m.styles.AccentSoft.Render(m.game.TileDescriptionUnderPlayer()),
+		"",
+		m.renderInteractionHint(),
 		"",
 		wrapText(m.game.Objective(), width-6),
 	}
 
 	body := strings.Join([]string{
-		m.styles.Subtitle.Render("Stats"),
+		m.styles.Subtitle.Render("Vitals"),
 		strings.Join(stats, "\n"),
 		"",
 		m.styles.Subtitle.Render("Floor"),
-		strings.Join(floorInfo, "\n"),
+		strings.Join(floorLines, "\n"),
 	}, "\n")
 
 	return m.styles.box("Status", body, width, height)
 }
 
-func (m Model) renderInventorySidebar(width int, height int) string {
-	panelHeight := max(4, height/2)
-	packPanel := m.renderPackPanel(width, panelHeight)
-	equippedPanel := m.renderInventoryDetailsPanel(width, panelHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, packPanel, equippedPanel)
+func (m *Model) renderInventorySidebar(width int, height int, originX int, originY int) string {
+	_ = originX
+	_ = originY
+	packHeight, equippedHeight := m.inventoryPanelHeights(height)
+
+	packPanel := m.renderPackPanel(width, packHeight)
+	lowerPanel := m.renderInventoryDetailsPanel(width, equippedHeight)
+	return lipgloss.JoinVertical(lipgloss.Left, packPanel, lowerPanel)
 }
 
-func (m Model) renderLog(width int, height int) string {
-	innerWidth := max(20, width-4)
-	lines := make([]string, 0, height)
-	for index := len(m.game.Log) - 1; index >= 0 && len(lines) < height-3; index-- {
-		wrapped := wrapText(m.game.Log[index], innerWidth)
+func (m *Model) renderLog(width int, height int, originX int, originY int) string {
+	_ = originX
+	_ = originY
+	innerWidth := max(22, width-6)
+	maxLines := max(1, height-3)
+	lines := make([]string, 0, maxLines)
+
+	start := max(0, len(m.game.Log)-24)
+	for _, entry := range m.game.Log[start:] {
+		wrapped := wrapText(entry, innerWidth-2)
 		parts := strings.Split(wrapped, "\n")
-		for partIndex := len(parts) - 1; partIndex >= 0 && len(lines) < height-3; partIndex-- {
-			lines = append(lines, parts[partIndex])
+		for partIndex, part := range parts {
+			prefix := "  "
+			if partIndex == 0 {
+				prefix = m.styles.AccentSoft.Render("• ")
+			}
+			lines = append(lines, prefix+part)
 		}
 	}
 
-	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
-		lines[left], lines[right] = lines[right], lines[left]
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
 	}
 
 	body := strings.Join(lines, "\n")
 	if body == "" {
-		body = "The abbey listens."
+		body = m.styles.Dim.Render("The abbey listens.")
 	}
-	return m.styles.box("Event Log", body, width, height)
+	return m.styles.box("Whispers", body, width, height)
 }
 
-func (m Model) renderPackPanel(width int, height int) string {
+func (m *Model) renderPackPanel(width int, height int) string {
 	stacks := m.inventoryStacks()
 	if len(stacks) == 0 {
-		return m.styles.box("Pack", m.styles.Dim.Render("Your pack is empty."), width, height)
+		box := m.styles.box
+		if m.inventoryPane == inventoryPanePack {
+			box = m.styles.focusBox
+		}
+		return box("Pack", m.styles.Dim.Render("Your pack is empty."), width, height)
 	}
 
 	rows := m.inventoryRows(stacks)
@@ -370,85 +581,105 @@ func (m Model) renderPackPanel(width int, height int) string {
 	lines := make([]string, 0, end-start)
 	for _, row := range rows[start:end] {
 		if row.StackIndex == -1 {
-			lines = append(lines, m.styles.Subtitle.Render(row.Category))
+			lines = append(lines, m.styles.Subtitle.Render(strings.ToUpper(row.Category)))
 			continue
 		}
 		selected := m.inventoryPane == inventoryPanePack && row.StackIndex == clamp(m.inventoryPackCursor, 0, len(stacks)-1)
 		lines = append(lines, m.renderPackLine(stacks[row.StackIndex], selected, width-4))
 	}
 
-	return m.styles.box("Pack", strings.Join(lines, "\n"), width, height)
+	box := m.styles.box
+	if m.inventoryPane == inventoryPanePack {
+		box = m.styles.focusBox
+	}
+	return box("Pack", strings.Join(lines, "\n"), width, height)
 }
 
-func (m Model) renderInventoryDetailsPanel(width int, height int) string {
-	lines := []string{
-		m.renderEquippedSlot(0, "Weapon", m.game.Player.Equipment.Weapon, width-4),
-		m.renderEquippedSlot(1, "Armor", m.game.Player.Equipment.Armor, width-4),
-		m.renderEquippedSlot(2, "Charm", m.game.Player.Equipment.Charm, width-4),
+func (m *Model) renderInventoryDetailsPanel(width int, height int) string {
+	contentLines := max(1, height-3)
+	detailed := contentLines >= 6
+
+	lines := make([]string, 0, contentLines)
+	for _, slot := range []game.EquipmentSlot{game.SlotWeapon, game.SlotArmor, game.SlotCharm} {
+		selected := m.inventoryPane == inventoryPaneEquipped && m.selectedEquipmentSlot() == slot
+		rendered, rowHeight := m.renderEquippedSlot(slot, selected, detailed, width-4)
+		lines = append(lines, rendered...)
+		_ = rowHeight
 	}
-	return m.styles.box("Equipped", strings.Join(lines, "\n"), width, height)
+
+	box := m.styles.box
+	if m.inventoryPane == inventoryPaneEquipped {
+		box = m.styles.focusBox
+	}
+	return box("Equipped", strings.Join(lines, "\n"), width, height)
 }
 
-func (m Model) renderPackLine(stack inventoryStack, selected bool, width int) string {
-	cursor := "  "
-	nameStyle := m.styles.App
-	if selected {
-		cursor = m.styles.MenuCursor.Render("> ")
-		nameStyle = m.styles.AccentSoft
-	}
-
-	parts := []string{
-		cursor,
-		m.styles.colorGlyph(stack.Item.Glyph, stack.Item.Tint, true),
-		" ",
-		nameStyle.Render(stack.Item.Name),
-		" ",
-		m.styles.Quantity.Render(fmt.Sprintf("(%d)", stack.Count)),
-	}
-
+func (m *Model) renderPackLine(stack inventoryStack, selected bool, width int) string {
+	quantity := m.styles.Quantity.Render(fmt.Sprintf("x%d", stack.Count))
+	left := m.styles.colorGlyph(stack.Item.Glyph, stack.Item.Tint, true) + " " + stack.Item.Name
 	if detail := m.renderPackItemDetail(stack.Item); detail != "" {
-		parts = append(parts, " ", detail)
+		left += " " + m.styles.Dim.Render("·") + " " + detail
 	}
 
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(parts, ""))
-}
-
-func (m Model) renderEquippedSlot(index int, label string, item *game.Item, width int) string {
-	cursor := "  "
-	labelStyle := m.styles.Muted
-	nameStyle := m.styles.App
-	if m.inventoryPane == inventoryPaneEquipped && index == clamp(m.inventoryEquipCursor, 0, 2) {
-		cursor = m.styles.MenuCursor.Render("> ")
-		labelStyle = m.styles.AccentSoft
-		nameStyle = m.styles.AccentSoft
+	prefix := "  "
+	if selected {
+		prefix = "› "
 	}
 
-	if item == nil {
-		line := cursor + labelStyle.Render(label+": ") + m.styles.Dim.Render("empty")
-		return lipgloss.NewStyle().Width(width).Render(line)
-	}
-
-	prefix := strings.Join([]string{
-		cursor,
-		labelStyle.Render(label + ": "),
-		m.styles.colorGlyph(item.Glyph, item.Tint, true),
-		" ",
-	}, "")
-	nameWidth := max(1, width-lipgloss.Width(prefix))
-	name := truncateText(item.Name, nameWidth)
-	line := prefix + nameStyle.Render(name)
-
-	detail := m.renderEquippedItemDetail(*item)
-	if detail != "" {
-		candidate := line + " " + detail
-		if lipgloss.Width(candidate) <= width {
-			line = candidate
-		}
+	available := max(1, width-lipgloss.Width(prefix)-lipgloss.Width(quantity)-1)
+	left = truncateText(left, available)
+	line := prefix + padRight(left, available) + " " + quantity
+	if selected {
+		return m.renderSelectedText(ansi.Strip(line), width)
 	}
 	return lipgloss.NewStyle().Width(width).Render(line)
 }
 
-func (m Model) renderPackItemDetail(item game.Item) string {
+func (m *Model) renderEquippedSlot(slot game.EquipmentSlot, selected bool, detailed bool, width int) ([]string, int) {
+	label := slot.Label()
+	item := m.equippedItemFor(slot)
+	cursor := "  "
+	if selected {
+		cursor = "› "
+	}
+
+	if item == nil {
+		line := cursor + m.styles.Muted.Render(label) + "  " + m.styles.Dim.Render("empty")
+		if detailed {
+			second := "  " + m.styles.Dim.Render("No rite is bound to this slot.")
+			if selected {
+				return []string{
+					m.renderSelectedText(ansi.Strip(line), width),
+					m.renderSelectedText(ansi.Strip(second), width),
+				}, 2
+			}
+			return []string{line, second}, 2
+		}
+		return []string{line}, 1
+	}
+
+	first := cursor + m.styles.Muted.Render(label) + "  " + m.styles.colorGlyph(item.Glyph, item.Tint, true) + " " + truncateText(item.Name, max(8, width-12))
+	if !detailed {
+		if selected {
+			return []string{
+				m.renderSelectedText(ansi.Strip(first), width),
+				m.renderSelectedText("  "+ansi.Strip(truncateText(m.renderEquippedItemDetail(*item), width-2)), width),
+			}, 2
+		}
+		return []string{first}, 1
+	}
+
+	second := "  " + m.renderEquippedItemDetail(*item)
+	if selected {
+		return []string{
+			m.renderSelectedText(ansi.Strip(first), width),
+			m.renderSelectedText(ansi.Strip(truncateText(second, width)), width),
+		}, 2
+	}
+	return []string{first, truncateText(second, width)}, 2
+}
+
+func (m *Model) renderPackItemDetail(item game.Item) string {
 	switch item.Kind {
 	case game.ItemKindConsumable:
 		return m.renderConsumableEffects(item)
@@ -461,7 +692,7 @@ func (m Model) renderPackItemDetail(item game.Item) string {
 	}
 }
 
-func (m Model) renderEquippedItemDetail(item game.Item) string {
+func (m *Model) renderEquippedItemDetail(item game.Item) string {
 	switch item.Kind {
 	case game.ItemKindEquipment:
 		return m.renderEquipmentStats(item)
@@ -472,7 +703,7 @@ func (m Model) renderEquippedItemDetail(item game.Item) string {
 	}
 }
 
-func (m Model) renderConsumableEffects(item game.Item) string {
+func (m *Model) renderConsumableEffects(item game.Item) string {
 	parts := make([]string, 0, 4)
 	if item.Heal > 0 {
 		parts = append(parts, m.styles.Heal.Render(fmt.Sprintf("+%d HP", item.Heal)))
@@ -490,7 +721,7 @@ func (m Model) renderConsumableEffects(item game.Item) string {
 	return strings.Join(parts, " ")
 }
 
-func (m Model) renderComparedEquipmentStats(item game.Item, equipped *game.Item) string {
+func (m *Model) renderComparedEquipmentStats(item game.Item, equipped *game.Item) string {
 	currentAttack := 0
 	currentDefense := 0
 	currentMaxHP := 0
@@ -518,7 +749,7 @@ func (m Model) renderComparedEquipmentStats(item game.Item, equipped *game.Item)
 	return strings.Join(parts, " ")
 }
 
-func (m Model) renderEquipmentStats(item game.Item) string {
+func (m *Model) renderEquipmentStats(item game.Item) string {
 	parts := make([]string, 0, 4)
 	if item.AttackBonus > 0 {
 		parts = append(parts, m.styles.Attack.Render(fmt.Sprintf("ATK+%d", item.AttackBonus)))
@@ -535,7 +766,7 @@ func (m Model) renderEquipmentStats(item game.Item) string {
 	return strings.Join(parts, " ")
 }
 
-func (m Model) renderComparedToken(label string, candidate int, current int) string {
+func (m *Model) renderComparedToken(label string, candidate int, current int) string {
 	style := m.styles.CompareEqual
 	switch {
 	case candidate > current:
@@ -546,70 +777,107 @@ func (m Model) renderComparedToken(label string, candidate int, current int) str
 	return style.Render(fmt.Sprintf("%s+%d", label, candidate))
 }
 
-func (m Model) equippedItemFor(slot game.EquipmentSlot) *game.Item {
-	switch slot {
-	case game.SlotWeapon:
-		return m.game.Player.Equipment.Weapon
-	case game.SlotArmor:
-		return m.game.Player.Equipment.Armor
-	case game.SlotCharm:
-		return m.game.Player.Equipment.Charm
-	default:
-		return nil
-	}
-}
-
-func (m Model) renderQuickHealPreview() string {
+func (m *Model) renderQuickHealPreview() string {
 	item, count, ok := m.game.QuickHealPreview()
 	if !ok {
-		return "Heal C  " + m.styles.Dim.Render("none")
+		return "Quick C  " + m.styles.Dim.Render("none")
 	}
 
-	parts := []string{
-		m.styles.AccentSoft.Render("Heal C"),
-		"  ",
-		m.styles.colorGlyph(item.Glyph, item.Tint, true),
-		" ",
-		lipgloss.NewStyle().Foreground(lipgloss.Color(item.Tint)).Render(item.Name),
-		" ",
-		m.styles.Quantity.Render(fmt.Sprintf("(%d)", count)),
-	}
+	line := "Quick C  " + m.styles.colorGlyph(item.Glyph, item.Tint, true) + " " + item.Name + " " + m.styles.Quantity.Render(fmt.Sprintf("x%d", count))
 	if detail := m.renderConsumableEffects(item); detail != "" {
-		parts = append(parts, " ", detail)
+		line += " " + m.styles.Dim.Render("·") + " " + detail
 	}
-	return strings.Join(parts, "")
+	return truncateText(line, 30)
 }
 
-func renderEquipLine(label string, item *game.Item) string {
-	if item == nil {
-		return label + "  none"
+func (m *Model) renderStateLine(statuses string) string {
+	if statuses == "Steady" {
+		return m.styles.Success.Render(statuses)
 	}
-	detail := item.DetailLine()
-	if detail == "" {
-		return label + "  " + item.Name
+	return m.styles.Danger.Render(statuses)
+}
+
+func (m *Model) renderCompletionSummary(completion game.FloorCompletion) string {
+	switch {
+	case completion.Complete():
+		return m.styles.Success.Render("The floor lies hushed.")
+	case completion.UnclearedRooms() == 0:
+		return m.styles.Info.Render("Every chamber is opened, but the floor still keeps traces.")
+	case completion.UnclearedRooms() == 1:
+		return m.styles.Info.Render("One chamber still resists your passing.")
+	default:
+		return m.styles.Info.Render(fmt.Sprintf("%d chambers still resist your passing.", completion.UnclearedRooms()))
 	}
-	return label + "  " + item.Name + "  " + detail
 }
 
-func hpBar(current int, total int, width int) string {
-	return progressBar(current, total, width, lipgloss.Color("#d16078"))
+func (m *Model) renderBoolMetric(label string, complete bool) string {
+	if complete {
+		return m.styles.Success.Render(label)
+	}
+	return m.styles.AccentSoft.Render(label)
 }
 
-func xpBar(current int, total int, width int) string {
-	return progressBar(current, total, width, lipgloss.Color("#5fa8d3"))
+func (m *Model) renderCountMetric(count int) string {
+	if count == 0 {
+		return m.styles.Success.Render("clear")
+	}
+	return m.styles.Danger.Render(fmt.Sprintf("%d remain", count))
 }
 
-func progressBar(current int, total int, width int, color lipgloss.Color) string {
+func (m *Model) renderInteractionHint() string {
+	context := m.game.InteractionContext()
+	switch context.Primary {
+	case game.InteractionPickup:
+		if len(context.Secondary) > 0 {
+			return m.styles.Accent.Render("E gathers the loot first; the stair waits after.")
+		}
+		return m.styles.Accent.Render("E gathers what lies beneath your boots.")
+	case game.InteractionDescend:
+		return m.styles.Info.Render("E asks the stair if you are ready to go lower.")
+	default:
+		return m.styles.Dim.Render("E has nothing to answer here.")
+	}
+}
+
+func (m *Model) renderStatBar(label string, current int, total int, width int, fill lipgloss.Color, track lipgloss.Color) string {
 	if total <= 0 {
 		total = 1
 	}
+	numeric := m.styles.Quantity.Render(fmt.Sprintf("%d/%d", current, total))
+	barWidth := clamp(width-lipgloss.Width(label)-lipgloss.Width(numeric)-2, 8, 12)
+	bar := compactBar(current, total, barWidth, fill, track)
+	line := label + " " + numeric + " " + bar
+	return lipgloss.NewStyle().Width(width).Render(line)
+}
+
+func compactBar(current int, total int, width int, fill lipgloss.Color, track lipgloss.Color) string {
+	if total <= 0 {
+		total = 1
+	}
+	if current < 0 {
+		current = 0
+	}
+	if current > total {
+		current = total
+	}
+
 	filled := current * width / total
 	if filled > width {
 		filled = width
 	}
-	full := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("#", filled))
-	empty := lipgloss.NewStyle().Foreground(lipgloss.Color("#4a433c")).Render(strings.Repeat("-", width-filled))
+
+	full := lipgloss.NewStyle().Foreground(fill).Render(strings.Repeat("█", filled))
+	empty := lipgloss.NewStyle().Foreground(track).Render(strings.Repeat("░", width-filled))
 	return full + empty
+}
+
+func (m *Model) renderSelectedText(text string, width int) string {
+	return m.styles.ListSelected.Copy().Width(width).Render(text)
+}
+
+func padRight(text string, width int) string {
+	padding := max(0, width-lipgloss.Width(text))
+	return text + strings.Repeat(" ", padding)
 }
 
 func wrapText(text string, width int) string {
@@ -639,14 +907,28 @@ func truncateText(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(strings.ReplaceAll(text, "\n", " "))
+	runes := []rune(strings.ReplaceAll(ansi.Strip(text), "\n", " "))
 	if len(runes) <= width {
 		return string(runes)
 	}
 	if width <= 3 {
-		return string(runes[:width])
+		return ansi.Truncate(text, width, "")
 	}
-	return string(runes[:width-3]) + "..."
+	return ansi.Truncate(text, width, "...")
+}
+
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func clamp(value int, low int, high int) int {

@@ -1,18 +1,19 @@
 package game
 
 type Floor struct {
-	Level    int
-	Theme    string
-	Width    int
-	Height   int
-	Tiles    [][]TileType
-	Visible  [][]bool
-	Explored [][]bool
-	Rooms    []Room
-	Entrance Position
-	Stairs   Position
-	Items    []GroundItem
-	Enemies  []*Enemy
+	Level     int
+	Theme     string
+	Width     int
+	Height    int
+	Tiles     [][]TileType
+	Visible   [][]bool
+	Explored  [][]bool
+	Rooms     []Room
+	RoomDoors [][]Position
+	Entrance  Position
+	Stairs    Position
+	Items     []GroundItem
+	Enemies   []*Enemy
 }
 
 func NewFloor(level int, width int, height int) *Floor {
@@ -30,14 +31,15 @@ func NewFloor(level int, width int, height int) *Floor {
 	}
 
 	return &Floor{
-		Level:    level,
-		Theme:    FloorTheme(level),
-		Width:    width,
-		Height:   height,
-		Tiles:    tiles,
-		Visible:  visible,
-		Explored: explored,
-		Stairs:   Position{X: -1, Y: -1},
+		Level:     level,
+		Theme:     FloorTheme(level),
+		Width:     width,
+		Height:    height,
+		Tiles:     tiles,
+		Visible:   visible,
+		Explored:  explored,
+		RoomDoors: nil,
+		Stairs:    Position{X: -1, Y: -1},
 	}
 }
 

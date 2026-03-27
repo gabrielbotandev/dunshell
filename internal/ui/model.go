@@ -27,6 +27,7 @@ type overlay int
 const (
 	overlayNone overlay = iota
 	overlayInventory
+	overlayDescend
 	overlayQuit
 )
 
@@ -36,6 +37,13 @@ const (
 	inventoryPanePack inventoryPane = iota
 	inventoryPaneEquipped
 )
+
+type rect struct {
+	X int
+	Y int
+	W int
+	H int
+}
 
 type inventoryStack struct {
 	Item       game.Item
@@ -48,6 +56,17 @@ type inventoryRow struct {
 	StackIndex int
 }
 
+type mapViewportState struct {
+	Panel   rect
+	Content rect
+	CameraX int
+	CameraY int
+}
+
+type descendPromptState struct {
+	Choice int
+}
+
 type keyMap struct {
 	Up        key.Binding
 	Down      key.Binding
@@ -55,14 +74,12 @@ type keyMap struct {
 	Right     key.Binding
 	Wait      key.Binding
 	QuickHeal key.Binding
-	Pickup    key.Binding
+	Interact  key.Binding
 	Inventory key.Binding
-	Descend   key.Binding
 	Help      key.Binding
 	Quit      key.Binding
 	Select    key.Binding
 	Back      key.Binding
-	Equip     key.Binding
 	Use       key.Binding
 }
 
@@ -74,27 +91,25 @@ func newKeyMap() keyMap {
 		Right:     key.NewBinding(key.WithKeys("right", "d", "D"), key.WithHelp("right/d", "move right")),
 		Wait:      key.NewBinding(key.WithKeys("."), key.WithHelp(".", "wait")),
 		QuickHeal: key.NewBinding(key.WithKeys("c", "C"), key.WithHelp("c", "quick heal")),
-		Pickup:    key.NewBinding(key.WithKeys("g", "G", ","), key.WithHelp("g", "pick up")),
+		Interact:  key.NewBinding(key.WithKeys("e", "E"), key.WithHelp("e", "interact")),
 		Inventory: key.NewBinding(key.WithKeys("i", "I"), key.WithHelp("i", "inventory")),
-		Descend:   key.NewBinding(key.WithKeys("k", "K"), key.WithHelp("k", "descend")),
 		Help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit:      key.NewBinding(key.WithKeys("q", "Q"), key.WithHelp("q", "quit safely")),
 		Select:    key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", "confirm")),
 		Back:      key.NewBinding(key.WithKeys("esc", "backspace"), key.WithHelp("esc", "back")),
-		Equip:     key.NewBinding(key.WithKeys("e", "E"), key.WithHelp("e", "equip or unequip")),
 		Use:       key.NewBinding(key.WithKeys("u", "U"), key.WithHelp("u", "use item")),
 	}
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Left, k.Right, k.Up, k.Down, k.Wait, k.QuickHeal, k.Inventory, k.Descend, k.Help, k.Quit}
+	return []key.Binding{k.Left, k.Right, k.Up, k.Down, k.Interact, k.QuickHeal, k.Inventory, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
-		{k.Wait, k.QuickHeal, k.Pickup, k.Inventory, k.Descend},
-		{k.Equip, k.Use, k.Help, k.Quit, k.Back},
+		{k.Wait, k.Interact, k.QuickHeal, k.Inventory},
+		{k.Use, k.Help, k.Quit, k.Back},
 	}
 }
 
@@ -115,14 +130,16 @@ type Model struct {
 	keys                 keyMap
 	help                 help.Model
 	game                 *game.Game
+	mapViewport          mapViewportState
+	descendPrompt        descendPromptState
 }
 
-func NewModel(seed int64, hasLockedSeed bool) Model {
+func NewModel(seed int64, hasLockedSeed bool) *Model {
 	keys := newKeyMap()
 	helpModel := help.New()
 	helpModel.ShowAll = false
 
-	return Model{
+	return &Model{
 		screen:        screenTitle,
 		returnScreen:  screenTitle,
 		lockedSeed:    seed,
@@ -133,11 +150,11 @@ func NewModel(seed int64, hasLockedSeed bool) Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m *Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = typed.Width
@@ -155,13 +172,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenHelp:
 			return m.updateHelp(typed)
 		case screenPlaying:
-			if m.overlay == overlayInventory {
+			switch m.overlay {
+			case overlayInventory:
 				return m.updateInventory(typed)
-			}
-			if m.overlay == overlayQuit {
+			case overlayDescend:
+				return m.updateDescendPrompt(typed)
+			case overlayQuit:
 				return m.updateQuitPrompt(typed)
+			default:
+				return m.updateGame(typed)
 			}
-			return m.updateGame(typed)
 		case screenVictory, screenGameOver:
 			return m.updateOutcome(typed)
 		}
@@ -169,19 +189,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m *Model) View() string {
 	switch m.screen {
 	case screenTitle:
 		return m.viewTitle()
 	case screenHelp:
 		return m.viewHelp()
 	case screenPlaying:
-		switch m.overlay {
-		case overlayQuit:
+		if m.overlay == overlayQuit {
 			return m.viewQuitPrompt()
-		default:
-			return m.viewGame()
 		}
+		return m.viewGame()
 	case screenVictory:
 		return m.viewOutcome(true)
 	case screenGameOver:
@@ -191,7 +209,7 @@ func (m Model) View() string {
 	}
 }
 
-func (m Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.menuIndex = (m.menuIndex + 2) % 3
@@ -216,7 +234,7 @@ func (m Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Back, m.keys.Help, m.keys.Select) {
 		m.screen = m.returnScreen
 		return m, nil
@@ -224,7 +242,7 @@ func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateOutcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateOutcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Select):
 		m.screen = screenTitle
@@ -238,7 +256,7 @@ func (m Model) updateOutcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Help):
 		m.returnScreen = screenPlaying
@@ -263,17 +281,22 @@ func (m Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.game.WaitTurn()
 	case key.Matches(msg, m.keys.QuickHeal):
 		m.game.QuickHeal()
-	case key.Matches(msg, m.keys.Pickup):
-		m.game.Pickup()
-	case key.Matches(msg, m.keys.Descend):
-		m.game.Descend()
+	case key.Matches(msg, m.keys.Interact):
+		switch m.game.InteractionContext().Primary {
+		case game.InteractionPickup:
+			m.game.Pickup()
+		case game.InteractionDescend:
+			m.openDescendPrompt()
+		default:
+			m.game.AddLog("Nothing here answers your hand.")
+		}
 	}
 
 	m.syncOutcome()
 	return m, nil
 }
 
-func (m Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Back, m.keys.Inventory):
 		m.overlay = overlayNone
@@ -293,20 +316,10 @@ func (m Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.inventoryEquipCursor++
 		}
-	case key.Matches(msg, m.keys.Equip):
-		m.handleInventoryEquip()
+	case key.Matches(msg, m.keys.Interact, m.keys.Select):
+		m.performInventoryPrimaryAction()
 	case key.Matches(msg, m.keys.Use):
 		m.handleInventoryUse()
-	case key.Matches(msg, m.keys.Select):
-		if m.inventoryPane == inventoryPaneEquipped {
-			m.handleInventoryEquip()
-		} else if item, ok := m.selectedPackItem(); ok {
-			if item.Kind == game.ItemKindEquipment {
-				m.handleInventoryEquip()
-			} else {
-				m.handleInventoryUse()
-			}
-		}
 	}
 
 	m.adjustInventoryScroll()
@@ -314,7 +327,30 @@ func (m Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateQuitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateDescendPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Left, m.keys.Up):
+		m.descendPrompt.Choice = 0
+	case key.Matches(msg, m.keys.Right, m.keys.Down):
+		m.descendPrompt.Choice = 1
+	case strings.EqualFold(msg.String(), "y"):
+		m.descendPrompt.Choice = 0
+		m.confirmDescend()
+	case strings.EqualFold(msg.String(), "n"):
+		m.overlay = overlayNone
+	case key.Matches(msg, m.keys.Select, m.keys.Interact):
+		if m.descendPrompt.Choice == 0 {
+			m.confirmDescend()
+		} else {
+			m.overlay = overlayNone
+		}
+	case key.Matches(msg, m.keys.Back):
+		m.overlay = overlayNone
+	}
+	return m, nil
+}
+
+func (m *Model) updateQuitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case strings.EqualFold(msg.String(), "y"):
 		return m, tea.Quit
@@ -327,12 +363,33 @@ func (m Model) updateQuitPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) performInventoryPrimaryAction() {
+	if m.inventoryPane == inventoryPaneEquipped {
+		slot := m.selectedEquipmentSlot()
+		m.game.Unequip(slot)
+		return
+	}
+
+	item, ok := m.selectedPackItem()
+	if !ok {
+		return
+	}
+
+	switch item.Kind {
+	case game.ItemKindEquipment:
+		m.handleInventoryEquip()
+	case game.ItemKindConsumable:
+		m.handleInventoryUse()
+	}
+}
+
 func (m *Model) handleInventoryEquip() {
 	if m.inventoryPane == inventoryPaneEquipped {
 		slot := m.selectedEquipmentSlot()
 		m.game.Unequip(slot)
 		return
 	}
+
 	index := m.selectedPackIndex()
 	if index >= 0 {
 		m.game.EquipItem(index)
@@ -349,25 +406,39 @@ func (m *Model) handleInventoryUse() {
 	}
 }
 
+func (m *Model) openDescendPrompt() {
+	m.overlay = overlayDescend
+	m.descendPrompt.Choice = 0
+}
+
+func (m *Model) confirmDescend() {
+	m.overlay = overlayNone
+	m.game.Descend()
+	m.syncOutcome()
+}
+
 func (m *Model) startRun() {
 	seed := m.lockedSeed
 	if !m.hasLockedSeed {
 		seed = time.Now().UTC().UnixNano()
 	}
-	g := game.New(seed)
-	m.game = g
+
+	m.game = game.New(seed)
 	m.screen = screenPlaying
 	m.overlay = overlayNone
 	m.inventoryPane = inventoryPanePack
 	m.inventoryPackCursor = 0
 	m.inventoryPackScroll = 0
 	m.inventoryEquipCursor = 0
+	m.mapViewport = mapViewportState{}
+	m.descendPrompt = descendPromptState{}
 }
 
 func (m *Model) syncOutcome() {
 	if m.game == nil {
 		return
 	}
+
 	switch m.game.Mode {
 	case game.ModeWon:
 		m.overlay = overlayNone
@@ -378,7 +449,7 @@ func (m *Model) syncOutcome() {
 	}
 }
 
-func (m Model) selectedEquipmentSlot() game.EquipmentSlot {
+func (m *Model) selectedEquipmentSlot() game.EquipmentSlot {
 	switch clamp(m.inventoryEquipCursor, 0, 2) {
 	case 0:
 		return game.SlotWeapon
@@ -391,7 +462,7 @@ func (m Model) selectedEquipmentSlot() game.EquipmentSlot {
 	}
 }
 
-func (m Model) selectedPackIndex() int {
+func (m *Model) selectedPackIndex() int {
 	stack, ok := m.selectedPackStack()
 	if !ok {
 		return -1
@@ -399,12 +470,21 @@ func (m Model) selectedPackIndex() int {
 	return stack.FirstIndex
 }
 
-func (m Model) selectedPackItem() (game.Item, bool) {
+func (m *Model) selectedPackItem() (game.Item, bool) {
 	stack, ok := m.selectedPackStack()
 	if !ok {
 		return game.Item{}, false
 	}
 	return stack.Item, true
+}
+
+func (m *Model) selectedPackStack() (inventoryStack, bool) {
+	stacks := m.inventoryStacks()
+	if len(stacks) == 0 {
+		return inventoryStack{}, false
+	}
+	index := clamp(m.inventoryPackCursor, 0, len(stacks)-1)
+	return stacks[index], true
 }
 
 func (m *Model) adjustInventoryScroll() {
@@ -432,24 +512,41 @@ func (m *Model) adjustInventoryScroll() {
 	m.inventoryPackScroll = clamp(m.inventoryPackScroll, 0, maxScroll)
 }
 
-func min(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func (m Model) inventoryVisiblePackRows() int {
+func (m *Model) inventoryVisiblePackRows() int {
 	width, _, bodyHeight, _, _ := m.gameplayMetrics()
 	sidebarHeight := bodyHeight
 	if width < 112 {
-		sidebarHeight = 12
+		sidebarHeight = max(10, bodyHeight-1)
 	}
-	panelHeight := max(4, sidebarHeight/2)
-	return max(1, panelHeight-4)
+	packHeight, _ := m.inventoryPanelHeights(sidebarHeight)
+	return max(1, packHeight-4)
 }
 
-func (m Model) inventoryStacks() []inventoryStack {
+func (m *Model) inventoryPanelHeights(sidebarHeight int) (int, int) {
+	equippedHeight := 9
+	switch {
+	case sidebarHeight >= 19:
+		equippedHeight = 10
+	case sidebarHeight <= 12:
+		equippedHeight = 7
+	case sidebarHeight <= 15:
+		equippedHeight = 8
+	}
+
+	if equippedHeight > sidebarHeight-5 {
+		equippedHeight = max(5, sidebarHeight-5)
+	}
+
+	packHeight := sidebarHeight - equippedHeight
+	if packHeight < 5 {
+		packHeight = 5
+		equippedHeight = max(5, sidebarHeight-packHeight)
+	}
+
+	return packHeight, equippedHeight
+}
+
+func (m *Model) inventoryStacks() []inventoryStack {
 	if m.game == nil {
 		return nil
 	}
@@ -488,7 +585,7 @@ func (m Model) inventoryStacks() []inventoryStack {
 	return stacks
 }
 
-func (m Model) inventoryRows(stacks []inventoryStack) []inventoryRow {
+func (m *Model) inventoryRows(stacks []inventoryStack) []inventoryRow {
 	rows := make([]inventoryRow, 0, len(stacks)+4)
 	lastCategory := ""
 	for index, stack := range stacks {
@@ -502,16 +599,7 @@ func (m Model) inventoryRows(stacks []inventoryStack) []inventoryRow {
 	return rows
 }
 
-func (m Model) selectedPackStack() (inventoryStack, bool) {
-	stacks := m.inventoryStacks()
-	if len(stacks) == 0 {
-		return inventoryStack{}, false
-	}
-	index := clamp(m.inventoryPackCursor, 0, len(stacks)-1)
-	return stacks[index], true
-}
-
-func (m Model) selectedPackLine(rows []inventoryRow) int {
+func (m *Model) selectedPackLine(rows []inventoryRow) int {
 	packIndex := 0
 	for lineIndex, row := range rows {
 		if row.StackIndex == -1 {
@@ -523,6 +611,23 @@ func (m Model) selectedPackLine(rows []inventoryRow) int {
 		packIndex++
 	}
 	return 0
+}
+
+func (m *Model) equippedItemFor(slot game.EquipmentSlot) *game.Item {
+	if m.game == nil {
+		return nil
+	}
+
+	switch slot {
+	case game.SlotWeapon:
+		return m.game.Player.Equipment.Weapon
+	case game.SlotArmor:
+		return m.game.Player.Equipment.Armor
+	case game.SlotCharm:
+		return m.game.Player.Equipment.Charm
+	default:
+		return nil
+	}
 }
 
 func inventoryCategoryLabel(item game.Item) string {

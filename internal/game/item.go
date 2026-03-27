@@ -101,8 +101,9 @@ func (i Item) DetailLine() string {
 }
 
 type GroundItem struct {
-	Pos  Position
-	Item Item
+	Pos       Position
+	Item      Item
+	RoomIndex int
 }
 
 type weightedItem struct {

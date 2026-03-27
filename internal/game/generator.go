@@ -44,6 +44,7 @@ func GenerateFloor(rng *rand.Rand, level int, maxFloors int, nextEnemyID *int) *
 			floor.Stairs = floor.Rooms[len(floor.Rooms)-1].Center()
 			floor.SetTile(floor.Stairs, TileStairsDown)
 		}
+		floor.BindRoomDoors()
 
 		populateFloor(rng, floor, maxFloors, nextEnemyID)
 		return floor
@@ -58,6 +59,7 @@ func GenerateFloor(rng *rand.Rand, level int, maxFloors int, nextEnemyID *int) *
 		fallback.Stairs = room.Center().Offset(8, 0)
 		fallback.SetTile(fallback.Stairs, TileStairsDown)
 	}
+	fallback.BindRoomDoors()
 	populateFloor(rng, fallback, maxFloors, nextEnemyID)
 	return fallback
 }
@@ -160,7 +162,11 @@ func populateFloor(rng *rand.Rand, floor *Floor, maxFloors int, nextEnemyID *int
 			break
 		}
 		occupied[pos] = true
-		floor.Items = append(floor.Items, GroundItem{Pos: pos, Item: RandomGroundItem(rng, floor.Level)})
+		floor.Items = append(floor.Items, GroundItem{
+			Pos:       pos,
+			Item:      RandomGroundItem(rng, floor.Level),
+			RoomIndex: floor.RoomIndexAt(pos),
+		})
 	}
 
 	enemyCount := 7 + floor.Level*2 + rng.Intn(3)
@@ -179,6 +185,7 @@ func populateFloor(rng *rand.Rand, floor *Floor, maxFloors int, nextEnemyID *int
 			Template: template,
 			Pos:      pos,
 			Home:     pos,
+			HomeRoom: floor.RoomIndexAt(pos),
 			HP:       template.MaxHP,
 			State:    AIStateWander,
 		}
@@ -190,7 +197,11 @@ func populateFloor(rng *rand.Rand, floor *Floor, maxFloors int, nextEnemyID *int
 	if floor.Level == maxFloors {
 		bossRoom := floor.Rooms[len(floor.Rooms)-1]
 		relicPos := bossRoom.Center()
-		floor.Items = append(floor.Items, GroundItem{Pos: relicPos, Item: ItemByID("cinder_crown")})
+		floor.Items = append(floor.Items, GroundItem{
+			Pos:       relicPos,
+			Item:      ItemByID("cinder_crown"),
+			RoomIndex: floor.RoomIndexAt(relicPos),
+		})
 		occupied[relicPos] = true
 
 		bossPos := relicPos.Offset(-2, 0)
@@ -203,6 +214,7 @@ func populateFloor(rng *rand.Rand, floor *Floor, maxFloors int, nextEnemyID *int
 			Template: template,
 			Pos:      bossPos,
 			Home:     bossPos,
+			HomeRoom: floor.RoomIndexAt(bossPos),
 			HP:       template.MaxHP,
 			State:    AIStateWander,
 		}

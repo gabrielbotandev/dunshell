@@ -168,6 +168,7 @@ type Enemy struct {
 	Template        EnemyTemplate
 	Pos             Position
 	Home            Position
+	HomeRoom        int
 	HP              int
 	State           AIState
 	LastKnownPlayer Position

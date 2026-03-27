@@ -18,6 +18,30 @@ type Summary struct {
 	RecoveredRelic bool
 }
 
+type InteractionKind int
+
+const (
+	InteractionNone InteractionKind = iota
+	InteractionPickup
+	InteractionDescend
+)
+
+func (k InteractionKind) Label() string {
+	switch k {
+	case InteractionPickup:
+		return "Gather"
+	case InteractionDescend:
+		return "Descend"
+	default:
+		return "Interact"
+	}
+}
+
+type InteractionContext struct {
+	Primary   InteractionKind
+	Secondary []InteractionKind
+}
+
 type Game struct {
 	Title       string
 	Seed        int64
@@ -195,6 +219,29 @@ func (g *Game) Descend() bool {
 	g.AddLog("You descend into " + strings.ToLower(g.Floor.Theme) + ".")
 	g.AddLog(g.floorIntro())
 	return true
+}
+
+func (g *Game) HasLootHere() bool {
+	return len(g.Floor.ItemIndicesAt(g.Player.Pos)) > 0
+}
+
+func (g *Game) CanDescendHere() bool {
+	return g.FloorIndex < g.MaxFloors && g.Player.Pos.Equals(g.Floor.Stairs)
+}
+
+func (g *Game) InteractionContext() InteractionContext {
+	context := InteractionContext{}
+	if g.HasLootHere() {
+		context.Primary = InteractionPickup
+		if g.CanDescendHere() {
+			context.Secondary = append(context.Secondary, InteractionDescend)
+		}
+		return context
+	}
+	if g.CanDescendHere() {
+		context.Primary = InteractionDescend
+	}
+	return context
 }
 
 func (g *Game) UseItem(index int) bool {
@@ -429,7 +476,11 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 	g.AddLog(enemy.Template.Name + " drops " + itoa(gold) + " gold.")
 
 	if item, ok := RandomDropItem(g.rng, g.FloorIndex); ok {
-		g.Floor.Items = append(g.Floor.Items, GroundItem{Pos: enemy.Pos, Item: item})
+		g.Floor.Items = append(g.Floor.Items, GroundItem{
+			Pos:       enemy.Pos,
+			Item:      item,
+			RoomIndex: g.Floor.RoomIndexAt(enemy.Pos),
+		})
 		g.AddLog(enemy.Template.Name + " leaves behind " + item.Name + ".")
 	}
 

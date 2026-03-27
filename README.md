@@ -6,8 +6,9 @@ Dunshell is a single-player terminal roguelike built in Go with Bubble Tea, Lip 
 
 - Turn-based dungeon crawling on a procedural grid map
 - Fog of war with line-of-sight field of view
+- Cleared-room tracking with visual completion feedback
 - Multiple themed floors with rising difficulty
-- Inventory, equipment, consumables, loot drops, and leveling
+- Inventory, equipment, consumables, loot drops, leveling, and room-clearing feedback
 - Distinct enemies with wandering, chasing, and attack behaviors
 - Bubble Tea-driven title, help, gameplay, victory, and defeat screens
 - Reproducible run seeds with an optional CLI flag
@@ -60,13 +61,14 @@ This keeps the game rules independent from the terminal presentation, making the
 - `arrow keys` or `W/A/S/D`: move
 - `.`: wait one turn
 - `c`: quick heal with the weakest healing consumable
-- `g` or `,`: pick up items on your tile
+- `e`: contextually interact with your tile
+- `e` on loot: pick it up
+- `e` on stairs: open the descend confirmation prompt
 - `i`: open inventory in the side panel
 - `left/right` or `A/D`: switch inventory section
 - `up/down` or `W/S`: move inside the inventory
-- `e`: equip or unequip in the inventory
+- `e` or `Enter`: perform the primary inventory action
 - `u`: use a consumable in the inventory
-- `k`: descend stairs
 - `?`: help screen
 - `q`: safe quit prompt
 - Letter keys accept lowercase and uppercase
@@ -87,7 +89,7 @@ go run . -seed 123456789
 ## Design Summary
 
 - Dungeon generation uses room-and-corridor layouts with doors, loot placement, enemy placement, and a special final sanctum floor objective.
-- The gameplay loop is tuned around short tactical runs: fight, loot, manage consumables, descend, level up, and survive status effects.
+- The gameplay loop is tuned around short tactical runs: fight, loot, clear chambers, manage consumables, descend, level up, and survive status effects.
 - Bubble Tea manages screen transitions and input while Lip Gloss provides the visual hierarchy for map, sidebar, log, menus, and end screens.
 - The map viewport crops around the player so the game still plays well when the terminal is smaller than the generated dungeon.
 
