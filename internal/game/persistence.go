@@ -8,15 +8,16 @@ import (
 	"time"
 )
 
-const SaveVersion = "0.3"
+const SaveVersion = GameVersion
 
 var ErrNoRunSave = errors.New("no active run save")
 
 type Profile struct {
-	Version    string `json:"version"`
-	Wins       int    `json:"wins"`
-	Difficulty int    `json:"difficulty"`
-	UpdatedAt  string `json:"updated_at"`
+	Version    string   `json:"version"`
+	Wins       int      `json:"wins"`
+	Difficulty int      `json:"difficulty"`
+	Settings   Settings `json:"settings,omitempty"`
+	UpdatedAt  string   `json:"updated_at"`
 }
 
 type RunState struct {
@@ -59,7 +60,7 @@ func LoadProfile() (Profile, error) {
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Profile{Version: SaveVersion}, nil
+		return Profile{Version: SaveVersion, Settings: DefaultSettings()}, nil
 	}
 	if err != nil {
 		return Profile{}, err
@@ -71,11 +72,13 @@ func LoadProfile() (Profile, error) {
 	if profile.Version == "" {
 		profile.Version = SaveVersion
 	}
+	profile.Settings = profile.Settings.Normalized()
 	return profile, nil
 }
 
 func SaveProfile(profile Profile) error {
 	profile.Version = SaveVersion
+	profile.Settings = profile.Settings.Normalized()
 	profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	path, err := profileFilePath()
 	if err != nil {

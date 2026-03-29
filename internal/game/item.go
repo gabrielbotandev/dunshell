@@ -47,9 +47,12 @@ type Item struct {
 	SightBonus   int
 	Heal         int
 	PoisonCure   bool
+	FireCure     bool
 	FocusTurns   int
 	FocusBonus   int
 	EmberDamage  int
+	PoisonResist int
+	FireResist   int
 	Price        int
 	KeyTier      KeyTier
 	MinFloor     int
@@ -78,13 +81,22 @@ func (i Item) DetailLine() string {
 			parts = append(parts, "+"+itoa(i.Heal)+" HP")
 		}
 		if i.PoisonCure {
-			parts = append(parts, "cures venom")
+			parts = append(parts, "cures poison")
+		}
+		if i.FireCure {
+			parts = append(parts, "douses fire")
 		}
 		if i.FocusTurns > 0 {
 			parts = append(parts, "focus +"+itoa(i.FocusBonus))
 		}
 		if i.EmberDamage > 0 {
 			parts = append(parts, "ember "+itoa(i.EmberDamage))
+		}
+		if i.PoisonResist > 0 {
+			parts = append(parts, "poison ward +"+itoa(i.PoisonResist))
+		}
+		if i.FireResist > 0 {
+			parts = append(parts, "fire ward +"+itoa(i.FireResist))
 		}
 		return joinParts(parts)
 	case ItemKindEquipment:
@@ -100,6 +112,12 @@ func (i Item) DetailLine() string {
 		}
 		if i.SightBonus > 0 {
 			parts = append(parts, "SIGHT+"+itoa(i.SightBonus))
+		}
+		if i.PoisonResist > 0 {
+			parts = append(parts, "POISON+"+itoa(i.PoisonResist))
+		}
+		if i.FireResist > 0 {
+			parts = append(parts, "FIRE+"+itoa(i.FireResist))
 		}
 		return joinParts(parts)
 	case ItemKindKey:
@@ -131,17 +149,22 @@ var itemCatalog = map[string]Item{
 	"healing_salve": {
 		ID: "healing_salve", Name: "Healing Salve", Kind: ItemKindConsumable, Rarity: RarityCommon,
 		Glyph: '✚', ASCII: '!', Tint: RarityCommon.Tint(), Description: "Waxed cloth packed with bitter resin.",
-		Heal: 12, Price: 18, MinFloor: 1, MaxFloor: 99, Weight: 18,
+		Heal: 10, Price: 18, MinFloor: 1, MaxFloor: 99, Weight: 18,
 	},
 	"pilgrim_bandage": {
 		ID: "pilgrim_bandage", Name: "Pilgrim Bandage", Kind: ItemKindConsumable, Rarity: RarityCommon,
 		Glyph: '✚', ASCII: '!', Tint: RarityCommon.Tint(), Description: "A tighter wrap blessed for long descents.",
-		Heal: 18, Price: 32, MinFloor: 4, MaxFloor: 99, Weight: 15,
+		Heal: 16, Price: 32, MinFloor: 4, MaxFloor: 99, Weight: 15,
 	},
 	"antivenom_phial": {
 		ID: "antivenom_phial", Name: "Antivenom Phial", Kind: ItemKindConsumable, Rarity: RarityUncommon,
 		Glyph: '✚', ASCII: '!', Tint: RarityUncommon.Tint(), Description: "Cuts mire poison and steadies the lungs.",
-		Heal: 6, PoisonCure: true, Price: 28, MinFloor: 2, MaxFloor: 99, Weight: 12,
+		Heal: 8, PoisonCure: true, Price: 28, MinFloor: 2, MaxFloor: 99, Weight: 12,
+	},
+	"dousing_salts": {
+		ID: "dousing_salts", Name: "Dousing Salts", Kind: ItemKindConsumable, Rarity: RarityUncommon,
+		Glyph: '✚', ASCII: '!', Tint: RarityUncommon.Tint(), Description: "Ash-cold salts that smother ember cling and sting.",
+		Heal: 8, FireCure: true, Price: 30, MinFloor: 4, MaxFloor: 99, Weight: 10,
 	},
 	"sunbrew_tonic": {
 		ID: "sunbrew_tonic", Name: "Sunbrew Tonic", Kind: ItemKindConsumable, Rarity: RarityUncommon,
@@ -160,8 +183,8 @@ var itemCatalog = map[string]Item{
 	},
 	"saintroot_draught": {
 		ID: "saintroot_draught", Name: "Saintroot Draught", Kind: ItemKindConsumable, Rarity: RarityLegendary,
-		Glyph: '✚', ASCII: '!', Tint: RarityLegendary.Tint(), Description: "Restores torn flesh and breaks the chapel's poisons.",
-		Heal: 32, PoisonCure: true, Price: 96, MinFloor: 12, MaxFloor: 99, Weight: 3,
+		Glyph: '✚', ASCII: '!', Tint: RarityLegendary.Tint(), Description: "Restores torn flesh and breaks the chapel's poisons and cinders.",
+		Heal: 30, PoisonCure: true, FireCure: true, Price: 96, MinFloor: 12, MaxFloor: 99, Weight: 3,
 	},
 	"hearth_knife": {
 		ID: "hearth_knife", Name: "Hearth Knife", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityCommon,
@@ -216,7 +239,7 @@ var itemCatalog = map[string]Item{
 	"gravewax_hauberk": {
 		ID: "gravewax_hauberk", Name: "Gravewax Hauberk", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityUncommon,
 		Glyph: '⛨', ASCII: '[', Tint: RarityUncommon.Tint(), Description: "Wax-black rings that drink the first shock of a blow.",
-		DefenseBonus: 3, MaxHPBonus: 4, Price: 60, MinFloor: 6, MaxFloor: 14, Weight: 8,
+		DefenseBonus: 3, MaxHPBonus: 4, PoisonResist: 1, Price: 60, MinFloor: 6, MaxFloor: 14, Weight: 8,
 	},
 	"floodplate_cuirass": {
 		ID: "floodplate_cuirass", Name: "Floodplate Cuirass", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityRare,
@@ -236,7 +259,7 @@ var itemCatalog = map[string]Item{
 	"ashen_vestments": {
 		ID: "ashen_vestments", Name: "Ashen Vestments", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityUnique,
 		Glyph: '✠', ASCII: '[', Tint: RarityUnique.Tint(), Description: "The prior's funerary layers, still warm with condemned prayer.",
-		DefenseBonus: 6, MaxHPBonus: 12, SightBonus: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
+		DefenseBonus: 6, MaxHPBonus: 12, SightBonus: 2, FireResist: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
 	},
 	"lantern_charm": {
 		ID: "lantern_charm", Name: "Lantern Charm", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
@@ -246,7 +269,7 @@ var itemCatalog = map[string]Item{
 	"warding_bead": {
 		ID: "warding_bead", Name: "Warding Bead", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityCommon.Tint(), Description: "A cool bead that stills the hand before impact.",
-		DefenseBonus: 1, Price: 20, MinFloor: 1, MaxFloor: 9, Weight: 11,
+		DefenseBonus: 1, FireResist: 1, Price: 20, MinFloor: 1, MaxFloor: 9, Weight: 11,
 	},
 	"vow_sigil": {
 		ID: "vow_sigil", Name: "Vow Sigil", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUncommon,
@@ -256,7 +279,7 @@ var itemCatalog = map[string]Item{
 	"salt_reliquary": {
 		ID: "salt_reliquary", Name: "Salt Reliquary", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUncommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityUncommon.Tint(), Description: "A dry charm that keeps rot and fear at arm's reach.",
-		DefenseBonus: 2, SightBonus: 1, Price: 52, MinFloor: 6, MaxFloor: 14, Weight: 8,
+		DefenseBonus: 2, SightBonus: 1, PoisonResist: 1, Price: 52, MinFloor: 6, MaxFloor: 14, Weight: 8,
 	},
 	"blackglass_eye": {
 		ID: "blackglass_eye", Name: "Blackglass Eye", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityRare,
@@ -266,12 +289,12 @@ var itemCatalog = map[string]Item{
 	"choir_knot": {
 		ID: "choir_knot", Name: "Choir Knot", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityLegendary,
 		Glyph: '◌', ASCII: '=', Tint: RarityLegendary.Tint(), Description: "A severed braid bound around a prayer bell.",
-		AttackBonus: 2, DefenseBonus: 2, MaxHPBonus: 4, Price: 124, MinFloor: 14, MaxFloor: 99, Weight: 3,
+		AttackBonus: 2, DefenseBonus: 2, MaxHPBonus: 4, PoisonResist: 1, FireResist: 1, Price: 124, MinFloor: 14, MaxFloor: 99, Weight: 3,
 	},
 	"crownshard_rosary": {
 		ID: "crownshard_rosary", Name: "Crownshard Rosary", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUnique,
 		Glyph: '✠', ASCII: '=', Tint: RarityUnique.Tint(), Description: "A string of splinters chipped from the crown's first casing.",
-		AttackBonus: 3, DefenseBonus: 3, MaxHPBonus: 6, SightBonus: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
+		AttackBonus: 3, DefenseBonus: 3, MaxHPBonus: 6, SightBonus: 2, PoisonResist: 1, FireResist: 1, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
 	},
 	"bronze_key": {
 		ID: "bronze_key", Name: "Bronze Key", Kind: ItemKindKey, Rarity: RarityCommon,
@@ -299,6 +322,7 @@ var consumableIDs = []string{
 	"healing_salve",
 	"pilgrim_bandage",
 	"antivenom_phial",
+	"dousing_salts",
 	"sunbrew_tonic",
 	"ember_phial",
 	"grave_amber",
@@ -505,6 +529,27 @@ func RandomUniqueItem(rng *RNG) Item {
 	return ItemByID(uniqueIDs[rng.Intn(len(uniqueIDs))])
 }
 
+func RandomUniqueEnemyDrop(rng *RNG, floor int, elite bool, bossTier int) (Item, bool) {
+	if bossTier >= 4 {
+		return Item{}, false
+	}
+
+	chance := 0.000015 + float64(max(0, floor-1))*0.000002
+	if elite {
+		chance += 0.0001
+	}
+	if bossTier > 0 {
+		chance += float64(bossTier) * 0.00035
+	}
+	if chance > 0.0012 {
+		chance = 0.0012
+	}
+	if rng.Float64() > chance {
+		return Item{}, false
+	}
+	return RandomUniqueItem(rng), true
+}
+
 func randomConsumable(rng *RNG, floor int) Item {
 	table := eligibleItemPool(consumableIDs, floor, RarityCommon, RarityLegendary)
 	return weightedRandomItem(rng, table)
@@ -636,7 +681,7 @@ func pickMerchantHealingItem(rng *RNG, floor int) Item {
 }
 
 func pickMerchantUtilityItem(rng *RNG, floor int) Item {
-	pool := []Item{ItemByID("antivenom_phial"), ItemByID("sunbrew_tonic"), ItemByID("ember_phial")}
+	pool := []Item{ItemByID("antivenom_phial"), ItemByID("dousing_salts"), ItemByID("sunbrew_tonic"), ItemByID("ember_phial")}
 	if floor >= 10 {
 		pool = append(pool, ItemByID("grave_amber"))
 	}

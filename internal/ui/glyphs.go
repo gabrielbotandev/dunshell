@@ -8,12 +8,30 @@ import (
 )
 
 type glyphSet struct {
-	ascii bool
+	ascii    bool
+	envASCII bool
 }
 
-func newGlyphSet() glyphSet {
+func newGlyphSet(settings game.Settings) glyphSet {
+	settings = settings.Normalized()
 	value := strings.TrimSpace(strings.ToLower(os.Getenv("DUNSHELL_ASCII")))
-	return glyphSet{ascii: value == "1" || value == "true" || value == "yes"}
+	envASCII := value == "1" || value == "true" || value == "yes"
+	ascii := envASCII
+	if !envASCII {
+		switch settings.GlyphMode {
+		case game.GlyphModeASCII:
+			ascii = true
+		case game.GlyphModeNerd:
+			ascii = false
+		default:
+			ascii = settings.ASCIIFallback
+		}
+	}
+	return glyphSet{ascii: ascii, envASCII: envASCII}
+}
+
+func (g glyphSet) ForcedASCII() bool {
+	return g.envASCII
 }
 
 func (g glyphSet) symbol(primary rune, fallback rune) string {
@@ -88,4 +106,45 @@ func (g glyphSet) roomMarker(kind game.RoomKind) string {
 	default:
 		return "•"
 	}
+}
+
+func (g glyphSet) floorVisible() string {
+	if g.ascii {
+		return "."
+	}
+	return "·"
+}
+
+func (g glyphSet) floorSeen() string {
+	if g.ascii {
+		return ","
+	}
+	return "ˑ"
+}
+
+func (g glyphSet) floorClearedVisible() string {
+	if g.ascii {
+		return ":"
+	}
+	return "•"
+}
+
+func (g glyphSet) floorClearedSeen() string {
+	if g.ascii {
+		return "."
+	}
+	return "·"
+}
+
+func (g glyphSet) bossFloor(visible bool) string {
+	if g.ascii {
+		if visible {
+			return ";"
+		}
+		return ":"
+	}
+	if visible {
+		return "▪"
+	}
+	return "▫"
 }

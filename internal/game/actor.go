@@ -5,8 +5,10 @@ type StatusKind int
 const (
 	StatusPoison StatusKind = iota
 	StatusFocus
-	StatusScorched
+	StatusFire
 )
+
+const StatusScorched = StatusFire
 
 type StatusEffect struct {
 	Kind    StatusKind
@@ -15,15 +17,50 @@ type StatusEffect struct {
 }
 
 func (s StatusEffect) Label() string {
+	suffix := itoa(s.Turns) + "t"
 	switch s.Kind {
 	case StatusPoison:
-		return "Poison " + itoa(s.Turns)
+		return "Poison " + suffix + " x" + itoa(max(1, s.Potency))
 	case StatusFocus:
-		return "Focus " + itoa(s.Turns)
-	case StatusScorched:
-		return "Scorch " + itoa(s.Turns)
+		return "Focus +" + itoa(max(1, s.Potency)) + " " + suffix
+	case StatusFire:
+		return "Fire " + suffix + " x" + itoa(max(1, s.Potency))
 	default:
 		return "Unknown"
+	}
+}
+
+func (s StatusEffect) ShortLabel() string {
+	potency := ""
+	if s.Potency > 1 {
+		potency = "x" + itoa(s.Potency)
+	}
+	switch s.Kind {
+	case StatusPoison:
+		return "VENOM " + itoa(s.Turns) + potency
+	case StatusFocus:
+		return "FOCUS " + itoa(s.Turns)
+	case StatusFire:
+		return "FIRE " + itoa(s.Turns) + potency
+	default:
+		return "STATE"
+	}
+}
+
+func (s StatusEffect) Harmful() bool {
+	return s.Kind != StatusFocus
+}
+
+func (k StatusKind) Name() string {
+	switch k {
+	case StatusPoison:
+		return "poison"
+	case StatusFocus:
+		return "focus"
+	case StatusFire:
+		return "fire"
+	default:
+		return "status"
 	}
 }
 
@@ -152,6 +189,11 @@ func (p *Player) Status(kind StatusKind) (StatusEffect, bool) {
 	return StatusEffect{}, false
 }
 
+func (p *Player) HasStatus(kind StatusKind) bool {
+	_, ok := p.Status(kind)
+	return ok
+}
+
 func (p *Player) ApplyStatus(kind StatusKind, turns int, potency int) {
 	for index := range p.Statuses {
 		if p.Statuses[index].Kind == kind {
@@ -164,6 +206,19 @@ func (p *Player) ApplyStatus(kind StatusKind, turns int, potency int) {
 	p.Statuses = append(p.Statuses, StatusEffect{Kind: kind, Turns: turns, Potency: potency})
 }
 
+func (p *Player) StatusResistance(kind StatusKind) int {
+	resistance := 0
+	for _, item := range p.equippedItems() {
+		switch kind {
+		case StatusPoison:
+			resistance += item.PoisonResist
+		case StatusFire:
+			resistance += item.FireResist
+		}
+	}
+	return resistance
+}
+
 func (p *Player) RemoveStatus(kind StatusKind) bool {
 	for index := range p.Statuses {
 		if p.Statuses[index].Kind == kind {
@@ -172,6 +227,16 @@ func (p *Player) RemoveStatus(kind StatusKind) bool {
 		}
 	}
 	return false
+}
+
+func (p *Player) RemoveStatuses(kinds ...StatusKind) []StatusKind {
+	removed := make([]StatusKind, 0, len(kinds))
+	for _, kind := range kinds {
+		if p.RemoveStatus(kind) {
+			removed = append(removed, kind)
+		}
+	}
+	return removed
 }
 
 func (p *Player) ClampHP() {
@@ -191,7 +256,7 @@ func (p *Player) GainXP(amount int) bool {
 		if p.Level%3 == 0 {
 			p.BaseDefense++
 		}
-		p.HP = min(p.MaxHP(), p.HP+8)
+		p.HP = min(p.MaxHP(), p.HP+6)
 		leveled = true
 	}
 	return leveled

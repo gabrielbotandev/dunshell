@@ -2,7 +2,10 @@ package game
 
 import "strings"
 
-const GameTitle = "Dunshell"
+const (
+	GameTitle   = "Dunshell"
+	GameVersion = "0.3.1"
+)
 
 type Summary struct {
 	Seed                 int64
@@ -260,7 +263,7 @@ func (g *Game) DescendWithRoute(index int) bool {
 	g.FloorIndex++
 	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, g.PersistentDifficulty, choice.Modifier, g.Endless, &g.nextEnemyID, &g.nextChestID, &g.nextMerchantID)
 	g.Player.Pos = g.Floor.Entrance
-	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+6)
+	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+4)
 	g.applyFloorArrival(choice.Modifier)
 	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
 	g.AddLog("You descend by way of " + strings.ToLower(choice.Title) + ".")
@@ -282,7 +285,7 @@ func (g *Game) ContinueEndless() bool {
 	choice := GenerateRouteChoices(g.rng, g.FloorIndex, g.MaxFloors, true)[g.rng.Intn(3)]
 	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, g.PersistentDifficulty, choice.Modifier, true, &g.nextEnemyID, &g.nextChestID, &g.nextMerchantID)
 	g.Player.Pos = g.Floor.Entrance
-	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+g.Player.MaxHP()/4)
+	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+max(6, g.Player.MaxHP()/5))
 	g.PendingRoutes = nil
 	g.AddLog("You keep the crown and go deeper. The abbey opens a throat beneath the sanctum.")
 	g.applyFloorArrival(choice.Modifier)
@@ -453,16 +456,16 @@ func (g *Game) UseItem(index int) bool {
 	case item.Heal > 0:
 		before := g.Player.HP
 		g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+item.Heal)
-		if item.PoisonCure {
-			g.Player.RemoveStatus(StatusPoison)
-		}
+		cured := g.consumeCurativeEffects(item)
 		healed := g.Player.HP - before
-		if healed == 0 && !item.PoisonCure {
+		if healed == 0 && len(cured) == 0 {
 			g.AddLog("The draught would be wasted right now.")
 			return false
 		}
-		if item.PoisonCure {
-			g.AddLog("You steady your breath with " + item.Name + ".")
+		if len(cured) > 0 && healed > 0 {
+			g.AddLog("You recover " + itoa(healed) + " HP and clear " + statusList(cured) + " with " + item.Name + ".")
+		} else if len(cured) > 0 {
+			g.AddLog("You clear " + statusList(cured) + " with " + item.Name + ".")
 		} else {
 			g.AddLog("You recover " + itoa(healed) + " HP with " + item.Name + ".")
 		}
@@ -657,14 +660,27 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 	g.Player.Gold += gold
 	g.AddLog(enemy.DisplayName() + " drops " + itoa(gold) + " gold.")
 
-	bonusDrop := enemy.Elite || enemy.Template.BossTier > 0
-	if item, ok := RandomDropItem(g.rng, g.FloorIndex, g.Floor.Modifier, bonusDrop); ok {
+	uniqueDropped := false
+	if item, ok := RandomUniqueEnemyDrop(g.rng, g.FloorIndex, enemy.Elite, enemy.Template.BossTier); ok {
 		g.Floor.Items = append(g.Floor.Items, GroundItem{
 			Pos:       enemy.Pos,
 			Item:      item,
 			RoomIndex: g.Floor.RoomIndexAt(enemy.Pos),
 		})
-		g.AddLog(enemy.DisplayName() + " leaves behind " + item.Name + ".")
+		g.AddLog(enemy.DisplayName() + " leaves behind a blood-rose gleam: " + item.Name + ".")
+		uniqueDropped = true
+	}
+
+	bonusDrop := enemy.Elite || enemy.Template.BossTier > 0
+	if !uniqueDropped {
+		if item, ok := RandomDropItem(g.rng, g.FloorIndex, g.Floor.Modifier, bonusDrop); ok {
+			g.Floor.Items = append(g.Floor.Items, GroundItem{
+				Pos:       enemy.Pos,
+				Item:      item,
+				RoomIndex: g.Floor.RoomIndexAt(enemy.Pos),
+			})
+			g.AddLog(enemy.DisplayName() + " leaves behind " + item.Name + ".")
+		}
 	}
 	if bonusDrop && g.rng.Float64() < 0.22 {
 		key := RandomKeyReward(g.rng, g.FloorIndex)
@@ -842,9 +858,8 @@ func (g *Game) enemyAttack(enemy *Enemy) {
 		g.Player.Gold -= stolen
 		g.AddLog(enemy.DisplayName() + " palms " + itoa(stolen) + " of your gold.")
 	}
-	if enemy.Template.PoisonChance > 0 && g.rng.Float64() < enemy.Template.PoisonChance {
-		g.Player.ApplyStatus(StatusPoison, enemy.Template.PoisonTurns, 1)
-		g.AddLog(enemy.DisplayName() + " leaves venom in the wound.")
+	if kind, chance, turns, potency := enemyAttackStatus(enemy); chance > 0 && g.rng.Float64() < chance {
+		g.applyPlayerStatus(kind, turns, potency, enemy.DisplayName())
 	}
 	if g.Player.HP <= 0 {
 		g.Player.HP = 0
@@ -863,7 +878,7 @@ func (g *Game) enemyBurst(enemy *Enemy) {
 	}
 	g.AddLog(enemy.DisplayName() + " uses " + label + " for " + itoa(damage) + ".")
 	if enemy.Template.BurstStatusTurns > 0 {
-		g.Player.ApplyStatus(enemy.Template.BurstStatus, enemy.Template.BurstStatusTurns, max(1, enemy.Template.BurstStatusPotency))
+		g.applyPlayerStatus(enemy.Template.BurstStatus, enemy.Template.BurstStatusTurns, max(1, enemy.Template.BurstStatusPotency), enemy.DisplayName()+"'s "+label)
 	}
 	if g.Player.HP <= 0 {
 		g.Player.HP = 0
@@ -878,16 +893,23 @@ func (g *Game) tickPlayerStatuses() {
 		switch status.Kind {
 		case StatusPoison:
 			g.Player.HP -= status.Potency
-			g.AddLog("Poison burns for " + itoa(status.Potency) + ".")
-		case StatusScorched:
+			g.AddLog("Poison bites for " + itoa(status.Potency) + ".")
+		case StatusFire:
 			g.Player.HP -= max(1, status.Potency)
-			g.AddLog("The scorch gnaws for " + itoa(max(1, status.Potency)) + ".")
+			g.AddLog("Fire eats you for " + itoa(max(1, status.Potency)) + ".")
 		}
 		status.Turns--
 		if status.Turns > 0 {
 			nextStatuses = append(nextStatuses, status)
-		} else if status.Kind == StatusFocus {
-			g.AddLog("The tonic's edge fades.")
+		} else {
+			switch status.Kind {
+			case StatusFocus:
+				g.AddLog("The tonic's edge fades.")
+			case StatusPoison:
+				g.AddLog("The poison thins out.")
+			case StatusFire:
+				g.AddLog("The fire gutters out.")
+			}
 		}
 	}
 	g.Player.Statuses = nextStatuses
@@ -917,7 +939,9 @@ func (g *Game) quickHealCandidate() (int, Item, int, bool) {
 		if item.Kind != ItemKindConsumable || item.Heal <= 0 {
 			continue
 		}
-		if bestIndex == -1 || item.Heal < bestItem.Heal || (item.Heal == bestItem.Heal && poisonUtilityRank(item) < poisonUtilityRank(bestItem)) {
+		utility := restorativeUtilityRank(item, g.Player)
+		bestUtility := restorativeUtilityRank(bestItem, g.Player)
+		if bestIndex == -1 || utility > bestUtility || (utility == bestUtility && (item.Heal < bestItem.Heal || (item.Heal == bestItem.Heal && item.Price < bestItem.Price))) {
 			bestIndex = index
 			bestItem = item
 		}
@@ -934,11 +958,23 @@ func (g *Game) quickHealCandidate() (int, Item, int, bool) {
 	return bestIndex, bestItem, count, true
 }
 
-func poisonUtilityRank(item Item) int {
-	if item.PoisonCure {
-		return 1
+func restorativeUtilityRank(item Item, player *Player) int {
+	rank := 0
+	if player != nil {
+		if player.HasStatus(StatusPoison) && item.PoisonCure {
+			rank += 4
+		}
+		if player.HasStatus(StatusFire) && item.FireCure {
+			rank += 4
+		}
 	}
-	return 0
+	if item.PoisonCure {
+		rank++
+	}
+	if item.FireCure {
+		rank++
+	}
+	return rank
 }
 
 func (g *Game) blockedTiles(exceptEnemyID int) map[Position]bool {
@@ -983,12 +1019,100 @@ func (g *Game) applyFloorArrival(modifier FloorModifier) {
 	}
 	if modifier.Rest {
 		g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+modifier.HealOnStart)
+		cleansed := []StatusKind(nil)
 		if modifier.CleanseOnRest {
-			g.Player.RemoveStatus(StatusPoison)
-			g.Player.RemoveStatus(StatusScorched)
+			cleansed = g.Player.RemoveStatuses(StatusPoison, StatusFire)
 		}
 		g.AddLog("A brief sanctuary steadies your hands before the next halls.")
+		if len(cleansed) > 0 {
+			g.AddLog("The rest washes away " + statusList(cleansed) + ".")
+		}
 	}
+}
+
+func enemyAttackStatus(enemy *Enemy) (StatusKind, float64, int, int) {
+	if enemy == nil {
+		return StatusPoison, 0, 0, 0
+	}
+	if enemy.Template.AttackStatusChance > 0 && enemy.Template.AttackStatusTurns > 0 {
+		return enemy.Template.AttackStatus, enemy.Template.AttackStatusChance, enemy.Template.AttackStatusTurns, max(1, enemy.Template.AttackStatusPotency)
+	}
+	if enemy.Template.PoisonChance > 0 && enemy.Template.PoisonTurns > 0 {
+		return StatusPoison, enemy.Template.PoisonChance, enemy.Template.PoisonTurns, 1
+	}
+	return StatusPoison, 0, 0, 0
+}
+
+func (g *Game) applyPlayerStatus(kind StatusKind, turns int, potency int, source string) bool {
+	if turns <= 0 || potency <= 0 {
+		return false
+	}
+
+	resistance := g.Player.StatusResistance(kind)
+	originalTurns := turns
+	for resistance > 0 && turns > 1 {
+		turns--
+		resistance--
+	}
+	for resistance > 0 && potency > 0 {
+		potency--
+		resistance--
+	}
+	if potency <= 0 {
+		g.AddLog("Your wards blunt the " + kind.Name() + " from " + source + ".")
+		return false
+	}
+
+	before, hadBefore := g.Player.Status(kind)
+	g.Player.ApplyStatus(kind, turns, potency)
+	after, _ := g.Player.Status(kind)
+	if turns < originalTurns {
+		g.AddLog("Your wards blunt the " + kind.Name() + ".")
+	}
+	if hadBefore && after.Turns == before.Turns && after.Potency == before.Potency {
+		return true
+	}
+
+	switch kind {
+	case StatusPoison:
+		if hadBefore {
+			g.AddLog(source + " deepens the poison on you (" + itoa(after.Turns) + "t).")
+		} else {
+			g.AddLog(source + " poisons you (" + itoa(after.Turns) + "t).")
+		}
+	case StatusFire:
+		if hadBefore {
+			g.AddLog(source + " feeds the fire on you (" + itoa(after.Turns) + "t).")
+		} else {
+			g.AddLog(source + " sets you ablaze (" + itoa(after.Turns) + "t).")
+		}
+	}
+	return true
+}
+
+func (g *Game) consumeCurativeEffects(item Item) []StatusKind {
+	toRemove := make([]StatusKind, 0, 2)
+	if item.PoisonCure {
+		toRemove = append(toRemove, StatusPoison)
+	}
+	if item.FireCure {
+		toRemove = append(toRemove, StatusFire)
+	}
+	return g.Player.RemoveStatuses(toRemove...)
+}
+
+func statusList(statuses []StatusKind) string {
+	if len(statuses) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		parts = append(parts, status.Name())
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 func (g *Game) findChestIndex(id int) int {

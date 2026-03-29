@@ -20,7 +20,7 @@ var titleArt = []string{
 }
 
 func (m *Model) renderTopHeader(width int) string {
-	line := game.GameTitle + "  ·  version 0.3"
+	line := game.GameTitle + "  ·  version " + game.GameVersion
 	return m.styles.HeaderBar.Copy().Width(width).Render(line)
 }
 
@@ -86,7 +86,7 @@ func (m *Model) viewTitle() string {
 		"",
 		seedLine,
 		metaLine,
-		m.styles.PanelNote.Render("Arrows or W/S move through menus. Enter confirms. Nerd Font recommended. Set DUNSHELL_ASCII=1 for pure ASCII fallback."),
+		m.styles.PanelNote.Render("Arrows or W/S move through menus. Enter confirms. Settings now controls glyph mode and descend prompts."),
 	)
 	if m.storageError != "" {
 		lines = append(lines, "", m.styles.Danger.Render("Storage: "+m.storageError))
@@ -157,26 +157,61 @@ func (m *Model) viewHelp() string {
 		m.renderHelpSection("Core Controls", []string{
 			"Arrows or W/A/S/D move. Walking into an enemy attacks it.",
 			"E interacts with your tile or nearby boss gate. C drinks the weakest healing item.",
-			"I opens inventory. Esc closes the active overlay. Q opens the safe quit prompt.",
+			"I opens inventory. P opens settings. Esc closes the active overlay. Q opens the safe quit prompt.",
 		}),
 		"",
 		m.renderHelpSection("Overlays", []string{
 			"Chest prompts show contents before spending a matching key.",
 			"Merchants stock five offers: healing, weapon, armor, charm, and one extra slot.",
 			"Boss entry prompts warn that the room will seal until the keeper dies.",
+			"Settings persists glyph mode, ASCII fallback, descend confirmation, and message log length.",
 		}),
 		"",
 		m.renderHelpSection("Legend", legend),
 		"",
 		m.renderHelpSection("Field Notes", []string{
 			"Rarity colors: Common, Uncommon, Rare, Legendary, Unique.",
-			"Nerd Font is recommended for the full glyph set. Use DUNSHELL_ASCII=1 if your terminal struggles with symbols.",
+			"Nerd Font is recommended for the full glyph set. DUNSHELL_ASCII=1 still forces ASCII as an override.",
 			"Auto-save location: " + saveLine,
 			m.styles.PanelNote.Render("Press Esc, Enter, or ? to return."),
 		}),
 	}, "\n")
 	panel := m.styles.box("Field Guide", body, min(width-4, 108), 0)
 	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
+}
+
+func (m *Model) viewSettings() string {
+	width := max(96, m.width)
+	height := max(32, m.height)
+	settings := m.settingsDraft.Normalized()
+	previewGlyphs := newGlyphSet(settings)
+	rows := []string{
+		m.renderSettingLine(0, "Glyph Mode", settings.GlyphMode.Label()),
+		m.renderSettingLine(1, "ASCII Fallback", boolLabel(settings.ASCIIFallback)),
+		m.renderSettingLine(2, "Confirm Descend", boolLabel(settings.ConfirmBeforeDescend)),
+		m.renderSettingLine(3, "Message Log", fmt.Sprintf("%d lines", settings.MessageLogLines)),
+		"",
+		m.renderSettingsActions(),
+		m.styles.PanelNote.Render("Up/Down choose • Left/Right change • Enter confirms • Esc returns"),
+	}
+	preview := []string{
+		m.styles.Subtitle.Render("Preview"),
+		previewGlyphs.player() + " you   " + previewGlyphs.stairs() + " stair   " + previewGlyphs.bossGate() + " gate",
+		previewGlyphs.merchant() + " merchant   " + previewGlyphs.chest(game.KeySilver) + " chest   " + previewGlyphs.symbol('✠', 'X') + " unique",
+	}
+	if description := m.settingsDescription(settings); description != "" {
+		preview = append(preview, "", m.styles.Subtitle.Render("Selection"), wrapText(description, 40))
+	}
+	if previewGlyphs.ForcedASCII() {
+		preview = append(preview, "", m.styles.Warning.Render("DUNSHELL_ASCII=1 is active and currently forces ASCII output."))
+	}
+	left := m.styles.focusBox("Settings", strings.Join(rows, "\n"), 42, 0)
+	right := m.styles.box("Detail", strings.Join(preview, "\n"), 48, 0)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	if width < 112 {
+		content = lipgloss.JoinVertical(lipgloss.Left, left, "", right)
+	}
+	return m.renderScreen(content, width, height, lipgloss.Center, lipgloss.Center)
 }
 
 func (m *Model) renderHelpSection(title string, lines []string) string {
@@ -241,39 +276,75 @@ func (m *Model) viewDescendPrompt() string {
 }
 
 func (m *Model) viewRouteChoice() string {
-	width := max(92, m.width)
-	height := max(30, m.height)
+	width := m.width
+	if width <= 0 {
+		width = 96
+	}
+	height := m.height
+	if height <= 0 {
+		height = 30
+	}
 	routes := m.game.RouteChoices()
 	if len(routes) == 0 {
 		return m.viewGame()
 	}
-	selected := routes[clamp(m.routeCursor, 0, len(routes)-1)]
-	nodes := make([]string, 0, len(routes)+2)
-	nodes = append(nodes, m.styles.Subtitle.Render(selected.MapLabel))
-	nodes = append(nodes, m.styles.Dim.Render("       ╭─────────────────────────────╮"))
-	for index, route := range routes {
-		label := route.Title + "  ·  " + route.Subtitle
-		line := "       │ " + truncateText(label, 44) + " │"
-		if index == m.routeCursor {
-			line = m.renderSelectedText(ansi.Strip(line), 51)
-		}
-		nodes = append(nodes, line)
+	selectedIndex := clamp(m.routeCursor, 0, len(routes)-1)
+	selected := routes[selectedIndex]
+	contentWidth := width - 2
+	if contentWidth <= 0 {
+		contentWidth = 94
 	}
-	nodes = append(nodes, m.styles.Dim.Render("       ╰─────────────────────────────╯"))
-	preview := []string{
-		m.styles.Accent.Render(selected.Title),
-		selected.Subtitle,
-		"",
-		m.styles.Success.Render("Reward: " + selected.Reward),
-		m.styles.Warning.Render("Pressure: " + selected.Risk),
+	if contentWidth > 118 {
+		contentWidth = 118
 	}
+
+	titleText := selected.MapLabel + "  ·  choose the next descent"
 	if selected.BossFloor {
-		preview = append(preview, "", m.styles.Danger.Render("Next floor is a boss depth. The route changes the floor around the keeper, not the boss cadence."))
+		titleText = selected.MapLabel + "  ·  keeper ahead"
 	}
-	preview = append(preview, "", m.styles.PanelNote.Render("Up/Down choose • Enter descends • Esc returns to the stair"))
-	panelBody := lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(nodes, "\n"), "   ", strings.Join(preview, "\n"))
-	panel := m.styles.focusBox("Route Map", panelBody, 84, 0)
-	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
+	title := m.styles.Accent.Render(truncateText(titleText, contentWidth))
+	help := m.styles.Footer.Render(truncateText("Up/Down choose branch • Left/Right also cycle • Enter descend • Esc return", contentWidth))
+
+	graphInnerHeight := clamp(height-10, 11, 18)
+	if contentWidth < 74 {
+		graphInnerHeight = clamp(height-15, 8, 12)
+	}
+	graphPanelHeight := graphInnerHeight + 3
+
+	var panels string
+	if contentWidth >= 74 {
+		graphWidth := clamp(contentWidth*58/100, 36, 60)
+		if graphWidth > contentWidth-26 {
+			graphWidth = max(28, contentWidth-26)
+		}
+		detailWidth := max(24, contentWidth-graphWidth-2)
+		graphPanel := m.styles.focusBox("Route Graph", m.renderRouteGraph(routes, selectedIndex, max(12, graphWidth-4), graphInnerHeight), graphWidth, graphPanelHeight)
+
+		var sidebar string
+		if contentWidth >= 104 && height >= 32 && detailWidth >= 30 {
+			detailPanelHeight := max(10, graphPanelHeight*3/5)
+			summaryPanelHeight := max(8, graphPanelHeight-detailPanelHeight-1)
+			detailPanel := m.styles.box("Selected Route", fixedPanelBody(m.routeDetailLines(selected, false), max(12, detailWidth-4), max(1, detailPanelHeight-3)), detailWidth, detailPanelHeight)
+			summaryPanel := m.styles.box("Rewards And Omens", fixedPanelBody(m.routeSignalLines(selected), max(12, detailWidth-4), max(1, summaryPanelHeight-3)), detailWidth, summaryPanelHeight)
+			sidebar = lipgloss.JoinVertical(lipgloss.Left, detailPanel, " ", summaryPanel)
+		} else {
+			sidebar = m.styles.box("Selected Route", fixedPanelBody(m.routeDetailLines(selected, true), max(12, detailWidth-4), max(1, graphPanelHeight-3)), detailWidth, graphPanelHeight)
+		}
+		panels = lipgloss.JoinHorizontal(lipgloss.Top, graphPanel, "  ", sidebar)
+	} else {
+		detailPanelHeight := clamp(height-graphPanelHeight-4, 7, 12)
+		graphPanel := m.styles.focusBox("Route Graph", m.renderRouteGraph(routes, selectedIndex, max(12, contentWidth-4), graphInnerHeight), contentWidth, graphPanelHeight)
+		detailPanel := m.styles.box("Selected Route", fixedPanelBody(m.routeDetailLines(selected, true), max(12, contentWidth-4), max(1, detailPanelHeight-3)), contentWidth, detailPanelHeight)
+		panels = lipgloss.JoinVertical(lipgloss.Left, graphPanel, " ", detailPanel)
+	}
+
+	sections := []string{title}
+	if contentWidth >= 74 {
+		sections = append(sections, m.styles.PanelNote.Render(wrapText("Branch lines show how the current stair can split. Route text stays outside the graph.", max(24, contentWidth))))
+	}
+	sections = append(sections, "", panels, "", help)
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return m.renderScreen(content, width, height, lipgloss.Center, lipgloss.Top)
 }
 
 func (m *Model) viewChestPrompt() string {
@@ -446,7 +517,7 @@ func (m *Model) renderMapCell(pos game.Position, enemies map[game.Position]*game
 	visible := floor.IsVisible(pos)
 	explored := floor.IsExplored(pos)
 	if !explored {
-		return m.styles.Void.Render(" ")
+		return " "
 	}
 	if m.game.Player.Pos.Equals(pos) {
 		base := m.floorCellStyle(pos, visible, roomStates)
@@ -489,7 +560,7 @@ func (m *Model) renderMapCell(pos game.Position, enemies map[game.Position]*game
 		}
 		return m.styles.TileWallSeen.Render("▓")
 	case game.TileFloor:
-		return m.floorCellStyle(pos, visible, roomStates).Render(" ")
+		return m.floorCellStyle(pos, visible, roomStates).Render(m.floorGlyph(pos, visible, roomStates))
 	case game.TileDoorClosed:
 		base := m.doorCellStyle(pos, visible, roomStates)
 		return m.styles.cellGlyph(base, m.glyphs.symbol('+', '+'), "#d4a66d", true)
@@ -578,14 +649,6 @@ func (m *Model) renderSidebar(width int, height int) string {
 
 func (m *Model) renderStatusSidebar(width int, height int) string {
 	player := m.game.Player
-	statuses := "Steady"
-	if len(player.Statuses) > 0 {
-		labels := make([]string, 0, len(player.Statuses))
-		for _, status := range player.Statuses {
-			labels = append(labels, status.Label())
-		}
-		statuses = strings.Join(labels, ", ")
-	}
 	completion := m.game.Floor.Completion()
 	stats := []string{
 		m.renderStatBar("HP", player.HP, player.MaxHP(), width-4, lipgloss.Color("#c56b78"), lipgloss.Color("#2d1d23")),
@@ -594,9 +657,10 @@ func (m *Model) renderStatusSidebar(width int, height int) string {
 		"Lvl   " + m.styles.AccentSoft.Render(fmt.Sprintf("%d", player.Level)) + "   Gold " + m.styles.Gold.Render(fmt.Sprintf("%d", player.Gold)),
 		"ATK   " + m.styles.Attack.Render(fmt.Sprintf("%d", player.AttackPower())) + "   DEF  " + m.styles.Defense.Render(fmt.Sprintf("%d", player.DefensePower())),
 		"Keys  " + m.renderKeyLine(),
-		"State " + m.renderStateLine(statuses),
-		m.renderQuickHealPreview(),
+		"State",
 	}
+	stats = append(stats, m.renderStatusSummary(width-4)...)
+	stats = append(stats, m.renderQuickHealPreview())
 	floorLines := []string{
 		m.styles.Muted.Render(m.game.FloorLabel()),
 		m.renderCompletionSummary(completion),
@@ -667,7 +731,7 @@ func (m *Model) renderLog(width int, height int) string {
 	innerWidth := max(24, width-6)
 	maxLines := max(1, height-3)
 	lines := make([]string, 0, maxLines)
-	start := max(0, len(m.game.Log)-28)
+	start := max(0, len(m.game.Log)-m.profile.Settings.MessageLogLines)
 	for _, entry := range m.game.Log[start:] {
 		wrapped := wrapText(entry, innerWidth-2)
 		parts := strings.Split(wrapped, "\n")
@@ -800,7 +864,10 @@ func (m *Model) renderConsumableEffects(item game.Item) string {
 		parts = append(parts, m.styles.Heal.Render(fmt.Sprintf("+%d HP", item.Heal)))
 	}
 	if item.PoisonCure {
-		parts = append(parts, m.styles.Cure.Render("cure"))
+		parts = append(parts, m.styles.Cure.Render("cure poison"))
+	}
+	if item.FireCure {
+		parts = append(parts, m.styles.Ember.Render("quench fire"))
 	}
 	if item.FocusTurns > 0 {
 		parts = append(parts, m.styles.Focus.Render(fmt.Sprintf("focus +%d", item.FocusBonus)))
@@ -808,6 +875,12 @@ func (m *Model) renderConsumableEffects(item game.Item) string {
 	}
 	if item.EmberDamage > 0 {
 		parts = append(parts, m.styles.Ember.Render(fmt.Sprintf("ember %d", item.EmberDamage)))
+	}
+	if item.PoisonResist > 0 {
+		parts = append(parts, m.styles.Cure.Render(fmt.Sprintf("venom ward %d", item.PoisonResist)))
+	}
+	if item.FireResist > 0 {
+		parts = append(parts, m.styles.Ember.Render(fmt.Sprintf("fire ward %d", item.FireResist)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -820,7 +893,7 @@ func (m *Model) renderComparedEquipmentStats(item game.Item, equipped *game.Item
 		currentMaxHP = equipped.MaxHPBonus
 		currentSight = equipped.SightBonus
 	}
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 6)
 	if item.AttackBonus > 0 {
 		parts = append(parts, m.renderComparedToken("ATK", item.AttackBonus, currentAttack))
 	}
@@ -833,11 +906,17 @@ func (m *Model) renderComparedEquipmentStats(item game.Item, equipped *game.Item
 	if item.SightBonus > 0 {
 		parts = append(parts, m.renderComparedToken("SIGHT", item.SightBonus, currentSight))
 	}
+	if item.PoisonResist > 0 || equippedPoisonResist(equipped) > 0 {
+		parts = append(parts, m.renderComparedToken("POISON", item.PoisonResist, equippedPoisonResist(equipped)))
+	}
+	if item.FireResist > 0 || equippedFireResist(equipped) > 0 {
+		parts = append(parts, m.renderComparedToken("FIRE", item.FireResist, equippedFireResist(equipped)))
+	}
 	return strings.Join(parts, " ")
 }
 
 func (m *Model) renderEquipmentStats(item game.Item) string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 6)
 	if item.AttackBonus > 0 {
 		parts = append(parts, m.styles.Attack.Render(fmt.Sprintf("ATK+%d", item.AttackBonus)))
 	}
@@ -849,6 +928,12 @@ func (m *Model) renderEquipmentStats(item game.Item) string {
 	}
 	if item.SightBonus > 0 {
 		parts = append(parts, m.styles.Sight.Render(fmt.Sprintf("SIGHT+%d", item.SightBonus)))
+	}
+	if item.PoisonResist > 0 {
+		parts = append(parts, m.styles.Cure.Render(fmt.Sprintf("POISON+%d", item.PoisonResist)))
+	}
+	if item.FireResist > 0 {
+		parts = append(parts, m.styles.Ember.Render(fmt.Sprintf("FIRE+%d", item.FireResist)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -922,10 +1007,249 @@ func (m *Model) renderInteractionHint() string {
 	case game.InteractionBossEntry:
 		return m.styles.Danger.Render("E asks the boss gate to seal you in.")
 	case game.InteractionDescend:
-		return m.styles.Info.Render("E opens the stair prompt and then the route map.")
+		if m.profile.Settings.ConfirmBeforeDescend {
+			return m.styles.Info.Render("E opens the stair prompt and then the route map.")
+		}
+		return m.styles.Info.Render("E opens the route map immediately.")
 	default:
 		return m.styles.Dim.Render("E has nothing to answer here.")
 	}
+}
+
+func (m *Model) renderSettingLine(index int, label string, value string) string {
+	line := padRight(label, 18) + value
+	if index == m.settingsCursor {
+		return m.renderSelectedText("› "+ansi.Strip(line), 38)
+	}
+	return "  " + line
+}
+
+func (m *Model) settingsDescription(settings game.Settings) string {
+	switch m.settingsCursor {
+	case 0:
+		return "Choose how the interface renders symbols. Auto follows the fallback toggle, Nerd Font prefers the full rune set, and ASCII forces plain terminal-safe glyphs."
+	case 1:
+		return "Mirrors the old DUNSHELL_ASCII=1 behavior inside the game UI. When Glyph Mode is Auto, turning this on falls back to plain ASCII without restarting the run."
+	case 2:
+		return "Controls whether pressing E on stairs asks for confirmation before opening the route map. Turning it off makes descent selection faster while keeping the route choice itself explicit."
+	case 3:
+		return "Sets how many recent whisper-log entries stay visible in the lower panel. Higher values preserve more combat and status context at the cost of density."
+	default:
+		return ""
+	}
+}
+
+func (m *Model) routeStyle(route game.RouteChoice) lipgloss.Style {
+	switch route.ID {
+	case "gilded_way":
+		return m.styles.Gold.Copy()
+	case "brokers_lantern":
+		return m.styles.Info.Copy()
+	case "pilgrims_rest":
+		return m.styles.Success.Copy()
+	case "reliquary_breach":
+		return m.styles.Accent.Copy()
+	case "ashen_hunt":
+		return m.styles.Warning.Copy()
+	case "cursed_procession":
+		return m.styles.Danger.Copy()
+	default:
+		return m.styles.AccentSoft.Copy()
+	}
+}
+
+func routeAccentColor(route game.RouteChoice) lipgloss.Color {
+	switch route.ID {
+	case "gilded_way":
+		return lipgloss.Color("#dfbe62")
+	case "brokers_lantern":
+		return lipgloss.Color("#88b2ce")
+	case "pilgrims_rest":
+		return lipgloss.Color("#88ba7a")
+	case "reliquary_breach":
+		return lipgloss.Color("#d39d62")
+	case "ashen_hunt":
+		return lipgloss.Color("#d7a16d")
+	case "cursed_procession":
+		return lipgloss.Color("#d47777")
+	default:
+		return lipgloss.Color("#8fa7bf")
+	}
+}
+
+func (m *Model) floorGlyph(pos game.Position, visible bool, roomStates []game.RoomState) string {
+	roomIndex := m.game.Floor.RoomIndexAt(pos)
+	bossRoom := roomIndex >= 0 && roomIndex < len(roomStates) && roomStates[roomIndex].Kind == game.RoomBoss && !roomStates[roomIndex].Cleared
+	if bossRoom {
+		return m.glyphs.bossFloor(visible)
+	}
+	cleared := m.roomClearedContext(pos, roomStates)
+	switch {
+	case visible && cleared:
+		return m.glyphs.floorClearedVisible()
+	case visible:
+		return m.glyphs.floorVisible()
+	case cleared:
+		return m.glyphs.floorClearedSeen()
+	default:
+		return m.glyphs.floorSeen()
+	}
+}
+
+func (m *Model) renderStatusSummary(width int) []string {
+	if len(m.game.Player.Statuses) == 0 {
+		return []string{"  " + m.styles.Success.Render("Steady")}
+	}
+	lines := make([]string, 0, 3)
+	current := "  "
+	for _, status := range m.game.Player.Statuses {
+		badge := m.renderStatusBadge(status)
+		candidate := current
+		if strings.TrimSpace(current) == "" {
+			candidate = "  " + badge
+		} else {
+			candidate = current + " " + badge
+		}
+		if lipgloss.Width(candidate) > width && strings.TrimSpace(current) != "" {
+			lines = append(lines, current)
+			current = "  " + badge
+			continue
+		}
+		current = candidate
+	}
+	if strings.TrimSpace(current) != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func (m *Model) renderStatusBadge(status game.StatusEffect) string {
+	label := "[" + status.ShortLabel() + "]"
+	switch status.Kind {
+	case game.StatusPoison:
+		return m.styles.Cure.Render(label)
+	case game.StatusFire:
+		return m.styles.Ember.Render(label)
+	case game.StatusFocus:
+		return m.styles.Focus.Render(label)
+	default:
+		return m.styles.Warning.Render(label)
+	}
+}
+
+func equippedPoisonResist(item *game.Item) int {
+	if item == nil {
+		return 0
+	}
+	return item.PoisonResist
+}
+
+func equippedFireResist(item *game.Item) int {
+	if item == nil {
+		return 0
+	}
+	return item.FireResist
+}
+
+func boolLabel(value bool) string {
+	if value {
+		return "On"
+	}
+	return "Off"
+}
+
+func (m *Model) renderSettingsActions() string {
+	active := -1
+	if m.settingsCursor >= 4 {
+		active = m.settingsCursor - 4
+	}
+	apply := m.styles.ModalChoice.Render(" Apply ")
+	back := m.styles.ModalChoice.Render(" Back ")
+	if active == 0 {
+		apply = m.styles.ModalChoiceActive.Render(" Apply ")
+	}
+	if active == 1 {
+		back = m.styles.ModalChoiceActive.Render(" Back ")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, apply, "  ", back)
+}
+
+func fixedPanelBody(lines []string, wrapWidth int, maxLines int) string {
+	if maxLines <= 0 {
+		return ""
+	}
+	out := make([]string, 0, maxLines)
+	truncated := false
+	for _, line := range lines {
+		if len(out) >= maxLines {
+			truncated = true
+			break
+		}
+		if strings.TrimSpace(ansi.Strip(line)) == "" {
+			out = append(out, "")
+			continue
+		}
+		wrapped := wrapText(line, wrapWidth)
+		for _, part := range strings.Split(wrapped, "\n") {
+			if len(out) >= maxLines {
+				truncated = true
+				break
+			}
+			out = append(out, truncateText(part, wrapWidth))
+		}
+	}
+	if truncated && len(out) > 0 {
+		last := out[len(out)-1]
+		out[len(out)-1] = truncateText(ansi.Strip(last), max(1, wrapWidth-1))
+		if lipgloss.Width(out[len(out)-1]) >= wrapWidth-1 {
+			out[len(out)-1] = truncateText(out[len(out)-1], wrapWidth)
+		}
+	}
+	for len(out) < maxLines {
+		out = append(out, "")
+	}
+	return strings.Join(out, "\n")
+}
+
+func routeWaitsPanelLines(route game.RouteChoice) []string {
+	modifier := route.Modifier
+	lines := make([]string, 0, 8)
+	if modifier.BonusGold > 0 {
+		lines = append(lines, "• more gold from kills")
+	}
+	if modifier.Merchant {
+		lines = append(lines, "• merchant guaranteed")
+	}
+	if modifier.Rest {
+		lines = append(lines, fmt.Sprintf("• recover %d HP", modifier.HealOnStart))
+		if modifier.CleanseOnRest {
+			lines = append(lines, "• poison and fire cleansed")
+		}
+	}
+	if modifier.GuaranteedKey != nil {
+		lines = append(lines, "• guaranteed "+modifier.GuaranteedKey.LowerLabel()+" key")
+	}
+	if modifier.ExtraChests > 0 {
+		lines = append(lines, "• extra reliquary chest")
+	}
+	if modifier.LootBonus > 0 {
+		lines = append(lines, "• stronger loot rolls")
+	}
+	if modifier.EnemyBonus > 0 {
+		lines = append(lines, fmt.Sprintf("• %d extra foes", modifier.EnemyBonus))
+	} else if modifier.EnemyBonus < 0 {
+		lines = append(lines, "• fewer enemies")
+	}
+	if modifier.EliteChance > 0 {
+		lines = append(lines, fmt.Sprintf("• %.0f%% extra elites", modifier.EliteChance*100))
+	}
+	if modifier.Cursed {
+		lines = append(lines, "• cursed scaling")
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "• steady descent")
+	}
+	return lines
 }
 
 func (m *Model) renderStatBar(label string, current int, total int, width int, fill lipgloss.Color, track lipgloss.Color) string {

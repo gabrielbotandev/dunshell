@@ -288,6 +288,67 @@ type RouteChoice struct {
 	BossFloor bool
 }
 
+type GlyphMode string
+
+const (
+	GlyphModeAuto  GlyphMode = "auto"
+	GlyphModeNerd  GlyphMode = "nerd"
+	GlyphModeASCII GlyphMode = "ascii"
+)
+
+func (g GlyphMode) Label() string {
+	switch g {
+	case GlyphModeNerd:
+		return "Nerd Font"
+	case GlyphModeASCII:
+		return "ASCII"
+	default:
+		return "Auto"
+	}
+}
+
+type Settings struct {
+	GlyphMode            GlyphMode `json:"glyph_mode,omitempty"`
+	ASCIIFallback        bool      `json:"ascii_fallback,omitempty"`
+	ConfirmBeforeDescend bool      `json:"confirm_before_descend,omitempty"`
+	MessageLogLines      int       `json:"message_log_lines,omitempty"`
+}
+
+func DefaultSettings() Settings {
+	return Settings{
+		GlyphMode:            GlyphModeAuto,
+		ASCIIFallback:        false,
+		ConfirmBeforeDescend: true,
+		MessageLogLines:      28,
+	}
+}
+
+func (s Settings) Normalized() Settings {
+	if s.GlyphMode == "" && s.MessageLogLines == 0 && !s.ASCIIFallback && !s.ConfirmBeforeDescend {
+		return DefaultSettings()
+	}
+
+	defaults := DefaultSettings()
+	switch s.GlyphMode {
+	case GlyphModeAuto, GlyphModeNerd, GlyphModeASCII:
+	default:
+		s.GlyphMode = defaults.GlyphMode
+	}
+
+	switch {
+	case s.MessageLogLines <= 0:
+		s.MessageLogLines = defaults.MessageLogLines
+	case s.MessageLogLines <= 22:
+		s.MessageLogLines = 20
+	case s.MessageLogLines >= 34:
+		s.MessageLogLines = 36
+	default:
+		s.MessageLogLines = 28
+	}
+
+	return s
+}
+
 type ChestReward struct {
 	Kind RewardKind
 	Gold int

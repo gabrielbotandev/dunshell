@@ -75,7 +75,6 @@ func newStyles() styles {
 		App: lipgloss.NewStyle().Foreground(text),
 		HeaderBar: lipgloss.NewStyle().
 			Foreground(accentSoft).
-			Background(lipgloss.Color("#120f0e")).
 			Bold(true).
 			Align(lipgloss.Center).
 			Padding(0, 1).
@@ -87,19 +86,16 @@ func newStyles() styles {
 			Foreground(text).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(frame).
-			Background(lipgloss.Color("#110f0e")).
 			Padding(0, 1),
 		PanelActive: lipgloss.NewStyle().
 			Foreground(text).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(frameActive).
-			Background(lipgloss.Color("#110f0e")).
 			Padding(0, 1),
 		ModalPanel: lipgloss.NewStyle().
 			Foreground(text).
 			Border(lipgloss.DoubleBorder()).
 			BorderForeground(frameDanger).
-			Background(lipgloss.Color("#100d0d")).
 			Padding(0, 1),
 		PanelTitle:       lipgloss.NewStyle().Foreground(accentSoft).Bold(true),
 		PanelTitleActive: lipgloss.NewStyle().Foreground(lipgloss.Color("#d8e8f6")).Bold(true),
@@ -142,17 +138,17 @@ func newStyles() styles {
 			BorderForeground(frameActive).
 			Bold(true).
 			Padding(0, 1),
-		Void:                    lipgloss.NewStyle().Background(lipgloss.Color("#080707")),
-		TileFloorVisible:        lipgloss.NewStyle().Background(lipgloss.Color("#151211")),
-		TileFloorSeen:           lipgloss.NewStyle().Background(lipgloss.Color("#0d0b0a")),
-		TileFloorClearedVisible: lipgloss.NewStyle().Background(lipgloss.Color("#101722")),
-		TileFloorClearedSeen:    lipgloss.NewStyle().Background(lipgloss.Color("#0a1017")),
-		TileWallVisible:         lipgloss.NewStyle().Foreground(lipgloss.Color("#8e8276")).Background(lipgloss.Color("#110f0e")),
-		TileWallSeen:            lipgloss.NewStyle().Foreground(lipgloss.Color("#514943")).Background(lipgloss.Color("#090808")),
-		TileWallClearedVisible:  lipgloss.NewStyle().Foreground(lipgloss.Color("#5b7389")).Background(lipgloss.Color("#101722")),
-		TileWallClearedSeen:     lipgloss.NewStyle().Foreground(lipgloss.Color("#334556")).Background(lipgloss.Color("#0a1017")),
-		BossFloorVisible:        lipgloss.NewStyle().Background(lipgloss.Color("#1d0f10")),
-		BossFloorSeen:           lipgloss.NewStyle().Background(lipgloss.Color("#130909")),
+		Void:                    lipgloss.NewStyle(),
+		TileFloorVisible:        lipgloss.NewStyle().Foreground(lipgloss.Color("#544841")),
+		TileFloorSeen:           lipgloss.NewStyle().Foreground(lipgloss.Color("#2f2824")),
+		TileFloorClearedVisible: lipgloss.NewStyle().Foreground(lipgloss.Color("#5c7285")),
+		TileFloorClearedSeen:    lipgloss.NewStyle().Foreground(lipgloss.Color("#354653")),
+		TileWallVisible:         lipgloss.NewStyle().Foreground(lipgloss.Color("#8e8276")),
+		TileWallSeen:            lipgloss.NewStyle().Foreground(lipgloss.Color("#514943")),
+		TileWallClearedVisible:  lipgloss.NewStyle().Foreground(lipgloss.Color("#6a8197")),
+		TileWallClearedSeen:     lipgloss.NewStyle().Foreground(lipgloss.Color("#3d5164")),
+		BossFloorVisible:        lipgloss.NewStyle().Foreground(lipgloss.Color("#8f4b4e")),
+		BossFloorSeen:           lipgloss.NewStyle().Foreground(lipgloss.Color("#593235")),
 	}
 }
 

@@ -1,37 +1,41 @@
 package game
 
 type EnemyTemplate struct {
-	ID                 string
-	Name               string
-	Glyph              rune
-	ASCII              rune
-	Tint               string
-	Description        string
-	MaxHP              int
-	Attack             int
-	Defense            int
-	Sight              int
-	XPReward           int
-	GoldMin            int
-	GoldMax            int
-	MinFloor           int
-	MaxFloor           int
-	Weight             int
-	Behavior           Behavior
-	PoisonChance       float64
-	PoisonTurns        int
-	GoldStealMax       int
-	CanOpenDoors       bool
-	BossTier           int
-	BurstName          string
-	BurstRange         int
-	BurstDamage        int
-	BurstCooldown      int
-	BurstStatus        StatusKind
-	BurstStatusTurns   int
-	BurstStatusPotency int
-	EnrageThreshold    int
-	EnrageAttackBonus  int
+	ID                  string
+	Name                string
+	Glyph               rune
+	ASCII               rune
+	Tint                string
+	Description         string
+	MaxHP               int
+	Attack              int
+	Defense             int
+	Sight               int
+	XPReward            int
+	GoldMin             int
+	GoldMax             int
+	MinFloor            int
+	MaxFloor            int
+	Weight              int
+	Behavior            Behavior
+	AttackStatus        StatusKind
+	AttackStatusChance  float64
+	AttackStatusTurns   int
+	AttackStatusPotency int
+	PoisonChance        float64
+	PoisonTurns         int
+	GoldStealMax        int
+	CanOpenDoors        bool
+	BossTier            int
+	BurstName           string
+	BurstRange          int
+	BurstDamage         int
+	BurstCooldown       int
+	BurstStatus         StatusKind
+	BurstStatusTurns    int
+	BurstStatusPotency  int
+	EnrageThreshold     int
+	EnrageAttackBonus   int
 }
 
 type FloorTheme struct {
@@ -67,110 +71,113 @@ var enemyCatalog = []EnemyTemplate{
 	{
 		ID: "gutter_rat", Name: "Gutter Rat", Glyph: 'r', ASCII: 'r', Tint: "#b9a38c",
 		Description: "Fast vermin that lose nerve when cornered.",
-		MaxHP:       8, Attack: 4, Defense: 0, Sight: 6, XPReward: 9, GoldMin: 1, GoldMax: 4,
+		MaxHP:       9, Attack: 5, Defense: 0, Sight: 6, XPReward: 9, GoldMin: 1, GoldMax: 4,
 		MinFloor: 1, MaxFloor: 3, Weight: 18, Behavior: BehaviorSkittish,
 	},
 	{
 		ID: "bone_beetle", Name: "Bone Beetle", Glyph: 'b', ASCII: 'b', Tint: "#8a9965",
 		Description: "A shrine beetle wearing fragments of old bone as shell.",
-		MaxHP:       14, Attack: 5, Defense: 2, Sight: 5, XPReward: 12, GoldMin: 2, GoldMax: 5,
+		MaxHP:       15, Attack: 6, Defense: 2, Sight: 5, XPReward: 12, GoldMin: 2, GoldMax: 5,
 		MinFloor: 1, MaxFloor: 5, Weight: 16, Behavior: BehaviorBrute,
 	},
 	{
 		ID: "lantern_wisp", Name: "Lantern Wisp", Glyph: 'w', ASCII: 'w', Tint: "#f2d16b",
 		Description: "Cold fire that settles in the lungs like poison.",
-		MaxHP:       12, Attack: 6, Defense: 1, Sight: 8, XPReward: 14, GoldMin: 3, GoldMax: 6,
-		MinFloor: 2, MaxFloor: 6, Weight: 14, Behavior: BehaviorProwler, PoisonChance: 0.24, PoisonTurns: 3,
+		MaxHP:       13, Attack: 7, Defense: 1, Sight: 8, XPReward: 14, GoldMin: 3, GoldMax: 6,
+		MinFloor: 2, MaxFloor: 6, Weight: 14, Behavior: BehaviorProwler, AttackStatus: StatusPoison,
+		AttackStatusChance: 0.34, AttackStatusTurns: 4, AttackStatusPotency: 1,
 	},
 	{
 		ID: "mire_hound", Name: "Mire Hound", Glyph: 'h', ASCII: 'h', Tint: "#6fab78",
 		Description: "It scents blood through doors and damp halls alike.",
-		MaxHP:       18, Attack: 7, Defense: 1, Sight: 9, XPReward: 18, GoldMin: 4, GoldMax: 8,
+		MaxHP:       20, Attack: 8, Defense: 1, Sight: 9, XPReward: 18, GoldMin: 4, GoldMax: 8,
 		MinFloor: 3, MaxFloor: 8, Weight: 13, Behavior: BehaviorHunter, CanOpenDoors: true,
 	},
 	{
 		ID: "tomb_brigand", Name: "Tomb Brigand", Glyph: 't', ASCII: 't', Tint: "#d4a66d",
 		Description: "A grave robber who still remembers the shine of coin.",
-		MaxHP:       19, Attack: 6, Defense: 2, Sight: 8, XPReward: 20, GoldMin: 6, GoldMax: 11,
+		MaxHP:       20, Attack: 8, Defense: 2, Sight: 8, XPReward: 20, GoldMin: 6, GoldMax: 11,
 		MinFloor: 4, MaxFloor: 9, Weight: 12, Behavior: BehaviorCutpurse, GoldStealMax: 8, CanOpenDoors: true,
 	},
 	{
 		ID: "cathedral_knight", Name: "Cathedral Knight", Glyph: 'K', ASCII: 'K', Tint: "#bac7d0",
 		Description: "Slow, stubborn, and impossible to dissuade once roused.",
-		MaxHP:       28, Attack: 9, Defense: 4, Sight: 6, XPReward: 28, GoldMin: 8, GoldMax: 14,
+		MaxHP:       30, Attack: 11, Defense: 4, Sight: 6, XPReward: 28, GoldMin: 8, GoldMax: 14,
 		MinFloor: 6, MaxFloor: 12, Weight: 11, Behavior: BehaviorSentinel, CanOpenDoors: true,
 	},
 	{
 		ID: "censer_acolyte", Name: "Censer Acolyte", Glyph: 'c', ASCII: 'c', Tint: "#c69d73",
 		Description: "A smoke-veiled celebrant that hurls burning incense ahead of itself.",
-		MaxHP:       22, Attack: 7, Defense: 2, Sight: 8, XPReward: 26, GoldMin: 9, GoldMax: 15,
+		MaxHP:       24, Attack: 9, Defense: 2, Sight: 8, XPReward: 26, GoldMin: 9, GoldMax: 15,
 		MinFloor: 7, MaxFloor: 15, Weight: 10, Behavior: BehaviorCaster, BurstName: "censer flare", BurstRange: 5,
-		BurstDamage: 8, BurstCooldown: 3, BurstStatus: StatusScorched, BurstStatusTurns: 2, BurstStatusPotency: 1,
+		BurstDamage: 10, BurstCooldown: 3, BurstStatus: StatusFire, BurstStatusTurns: 3, BurstStatusPotency: 1,
 	},
 	{
 		ID: "grave_sycophant", Name: "Grave Sycophant", Glyph: 's', ASCII: 's', Tint: "#9b8476",
 		Description: "A broad-shouldered penitent that has forgotten how to stop charging.",
-		MaxHP:       32, Attack: 10, Defense: 3, Sight: 7, XPReward: 30, GoldMin: 10, GoldMax: 16,
+		MaxHP:       34, Attack: 12, Defense: 3, Sight: 7, XPReward: 30, GoldMin: 10, GoldMax: 16,
 		MinFloor: 9, MaxFloor: 16, Weight: 10, Behavior: BehaviorBrute,
 	},
 	{
 		ID: "ash_archer", Name: "Ash Archer", Glyph: 'a', ASCII: 'a', Tint: "#e39b66",
 		Description: "Its bowstring is a strip of embered gut that never snaps.",
-		MaxHP:       24, Attack: 9, Defense: 2, Sight: 9, XPReward: 32, GoldMin: 12, GoldMax: 18,
+		MaxHP:       26, Attack: 11, Defense: 2, Sight: 9, XPReward: 32, GoldMin: 12, GoldMax: 18,
 		MinFloor: 10, MaxFloor: 18, Weight: 10, Behavior: BehaviorCaster, BurstName: "ash bolt", BurstRange: 7,
-		BurstDamage: 10, BurstCooldown: 2,
+		BurstDamage: 12, BurstCooldown: 2, BurstStatus: StatusFire, BurstStatusTurns: 2, BurstStatusPotency: 1,
 	},
 	{
 		ID: "reliquary_ogre", Name: "Reliquary Ogre", Glyph: 'O', ASCII: 'O', Tint: "#9f8b7a",
 		Description: "A chained giant swollen on relic dust and old vows.",
-		MaxHP:       40, Attack: 13, Defense: 4, Sight: 6, XPReward: 38, GoldMin: 14, GoldMax: 22,
+		MaxHP:       42, Attack: 15, Defense: 4, Sight: 6, XPReward: 38, GoldMin: 14, GoldMax: 22,
 		MinFloor: 12, MaxFloor: 20, Weight: 8, Behavior: BehaviorBrute, CanOpenDoors: true,
 	},
 	{
 		ID: "drowned_abbot", Name: "Drowned Abbot", Glyph: 'A', ASCII: 'A', Tint: "#86a6c1",
 		Description: "A drowned priest whose blessing still arrives as punishment.",
-		MaxHP:       34, Attack: 11, Defense: 5, Sight: 8, XPReward: 40, GoldMin: 16, GoldMax: 24,
+		MaxHP:       36, Attack: 13, Defense: 5, Sight: 8, XPReward: 40, GoldMin: 16, GoldMax: 24,
 		MinFloor: 14, MaxFloor: 20, Weight: 7, Behavior: BehaviorCaster, CanOpenDoors: true,
-		BurstName: "drowned litany", BurstRange: 6, BurstDamage: 12, BurstCooldown: 3,
+		BurstName: "drowned litany", BurstRange: 6, BurstDamage: 15, BurstCooldown: 3, BurstStatus: StatusPoison,
+		BurstStatusTurns: 3, BurstStatusPotency: 1,
 	},
 	{
 		ID: "ember_seraph", Name: "Ember Seraph", Glyph: 'S', ASCII: 'S', Tint: "#ef7f45",
 		Description: "A flayed choir thing made of feather-shadows and furnace light.",
-		MaxHP:       30, Attack: 12, Defense: 3, Sight: 10, XPReward: 42, GoldMin: 16, GoldMax: 26,
+		MaxHP:       32, Attack: 15, Defense: 3, Sight: 10, XPReward: 42, GoldMin: 16, GoldMax: 26,
 		MinFloor: 16, MaxFloor: 20, Weight: 6, Behavior: BehaviorHunter,
-		BurstName: "ember lance", BurstRange: 6, BurstDamage: 11, BurstCooldown: 3, BurstStatus: StatusScorched,
-		BurstStatusTurns: 2, BurstStatusPotency: 2,
+		BurstName: "ember lance", BurstRange: 6, BurstDamage: 13, BurstCooldown: 3, BurstStatus: StatusFire,
+		BurstStatusTurns: 3, BurstStatusPotency: 2,
 	},
 	{
 		ID: "houndmaster_vey", Name: "Houndmaster Vey", Glyph: '◆', ASCII: 'V', Tint: "#d26767",
 		Description: "The reliquary's kennel saint, all chain, scar, and command.",
-		MaxHP:       58, Attack: 11, Defense: 3, Sight: 10, XPReward: 70, GoldMin: 30, GoldMax: 40,
+		MaxHP:       64, Attack: 13, Defense: 4, Sight: 10, XPReward: 70, GoldMin: 30, GoldMax: 40,
 		MinFloor: 5, MaxFloor: 5, Weight: 1, Behavior: BehaviorBoss, CanOpenDoors: true, BossTier: 1,
-		BurstName: "ruinous pounce", BurstRange: 4, BurstDamage: 10, BurstCooldown: 2,
+		BurstName: "ruinous pounce", BurstRange: 4, BurstDamage: 12, BurstCooldown: 2,
 	},
 	{
 		ID: "bell_archivist_oria", Name: "Bell Archivist Oria", Glyph: '◆', ASCII: 'O', Tint: "#cf6767",
 		Description: "A keeper of drowned bells whose toll still strips the air raw.",
-		MaxHP:       82, Attack: 14, Defense: 5, Sight: 11, XPReward: 100, GoldMin: 48, GoldMax: 60,
+		MaxHP:       92, Attack: 16, Defense: 5, Sight: 11, XPReward: 100, GoldMin: 48, GoldMax: 60,
 		MinFloor: 10, MaxFloor: 10, Weight: 1, Behavior: BehaviorBoss, BossTier: 2,
-		BurstName: "chime of ruin", BurstRange: 7, BurstDamage: 12, BurstCooldown: 2, BurstStatus: StatusScorched,
-		BurstStatusTurns: 2, BurstStatusPotency: 1,
+		BurstName: "chime of ruin", BurstRange: 7, BurstDamage: 15, BurstCooldown: 2, BurstStatus: StatusFire,
+		BurstStatusTurns: 3, BurstStatusPotency: 2,
 	},
 	{
 		ID: "censer_matriarch", Name: "Censer Matriarch", Glyph: '◆', ASCII: 'M', Tint: "#df6464",
 		Description: "A smoke-crowned mother of cinders who burns the room by breathing.",
-		MaxHP:       104, Attack: 17, Defense: 6, Sight: 11, XPReward: 140, GoldMin: 70, GoldMax: 84,
+		MaxHP:       118, Attack: 19, Defense: 6, Sight: 11, XPReward: 140, GoldMin: 70, GoldMax: 84,
 		MinFloor: 15, MaxFloor: 15, Weight: 1, Behavior: BehaviorBoss, BossTier: 3,
 		BurstName: "incense storm", BurstRange: 6, BurstDamage: 14, BurstCooldown: 2, BurstStatus: StatusPoison,
-		BurstStatusTurns: 4, BurstStatusPotency: 2,
+		BurstStatusTurns: 5, BurstStatusPotency: 2,
 	},
 	{
 		ID: "ashen_prior", Name: "Ashen Prior", Glyph: '✠', ASCII: 'P', Tint: "#f05f5f",
 		Description: "Last abbot of the ember rite, still kneeling over the crown.",
-		MaxHP:       148, Attack: 20, Defense: 8, Sight: 12, XPReward: 220, GoldMin: 120, GoldMax: 150,
+		MaxHP:       165, Attack: 23, Defense: 8, Sight: 12, XPReward: 220, GoldMin: 120, GoldMax: 150,
 		MinFloor: 20, MaxFloor: 20, Weight: 1, Behavior: BehaviorBoss, CanOpenDoors: true, BossTier: 4,
-		BurstName: "funeral litany", BurstRange: 8, BurstDamage: 18, BurstCooldown: 2, BurstStatus: StatusScorched,
-		BurstStatusTurns: 3, BurstStatusPotency: 2, EnrageThreshold: 50, EnrageAttackBonus: 4,
+		AttackStatus: StatusFire, AttackStatusChance: 0.28, AttackStatusTurns: 3, AttackStatusPotency: 1,
+		BurstName: "funeral litany", BurstRange: 8, BurstDamage: 22, BurstCooldown: 2, BurstStatus: StatusFire,
+		BurstStatusTurns: 4, BurstStatusPotency: 2, EnrageThreshold: 50, EnrageAttackBonus: 5,
 	},
 }
 
@@ -294,30 +301,49 @@ func BossTemplateForFloor(rng *RNG, floor int, maxFloors int, endless bool) Enem
 func ScaleEnemyTemplate(template EnemyTemplate, floor int, persistentDifficulty int, elite bool, cursed bool) EnemyTemplate {
 	scaled := template
 	depthScale := max(0, floor-template.MinFloor)
-	scaled.MaxHP += depthScale*2 + persistentDifficulty*3
-	scaled.Attack += depthScale/2 + persistentDifficulty
-	scaled.Defense += depthScale/4 + persistentDifficulty/2
+	scaled.MaxHP += depthScale*3 + persistentDifficulty*4
+	scaled.Attack += 1 + depthScale*2/3 + persistentDifficulty
+	scaled.Defense += depthScale/3 + persistentDifficulty/2
 	scaled.XPReward += depthScale*2 + persistentDifficulty*2
 	scaled.GoldMin += depthScale / 2
 	scaled.GoldMax += depthScale
 
 	if cursed {
-		scaled.MaxHP += 4 + floor/2
-		scaled.Attack += 2
+		scaled.MaxHP += 6 + floor/2
+		scaled.Attack += 3
+		scaled.Defense++
 	}
 	if scaled.BossTier > 0 {
-		scaled.MaxHP += floor*2 + persistentDifficulty*8 + scaled.BossTier*10
-		scaled.Attack += floor/3 + scaled.BossTier*2
-		scaled.Defense += scaled.BossTier
-		scaled.BurstDamage += scaled.BossTier*2 + floor/6
+		scaled.MaxHP += floor*3 + persistentDifficulty*10 + scaled.BossTier*12
+		scaled.Attack += floor/2 + scaled.BossTier*3
+		scaled.Defense += 1 + scaled.BossTier
+		scaled.BurstDamage += scaled.BossTier*3 + floor/5
+		if scaled.AttackStatusTurns > 0 {
+			scaled.AttackStatusTurns++
+		}
+		if scaled.BurstStatusTurns > 0 {
+			scaled.BurstStatusTurns++
+		}
 	}
 	if elite {
-		scaled.MaxHP += 10 + floor
-		scaled.Attack += 2 + floor/6
-		scaled.Defense += 1 + floor/10
+		scaled.MaxHP += 12 + floor
+		scaled.Attack += 3 + floor/5
+		scaled.Defense += 2 + floor/8
 		scaled.XPReward += 10 + floor/2
 		scaled.GoldMin += 5 + floor/3
 		scaled.GoldMax += 7 + floor/2
+		if scaled.AttackStatusTurns > 0 {
+			scaled.AttackStatusTurns++
+		}
+		if scaled.BurstStatusTurns > 0 {
+			scaled.BurstStatusTurns++
+		}
+		if scaled.AttackStatusPotency > 0 && floor >= 8 {
+			scaled.AttackStatusPotency++
+		}
+		if scaled.BurstStatusPotency > 0 && floor >= 10 {
+			scaled.BurstStatusPotency++
+		}
 	}
 	return scaled
 }

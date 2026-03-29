@@ -21,6 +21,7 @@ const (
 	screenTitle screen = iota
 	screenSeed
 	screenHelp
+	screenSettings
 	screenPlaying
 	screenVictory
 	screenGameOver
@@ -80,6 +81,7 @@ type keyMap struct {
 	QuickHeal key.Binding
 	Interact  key.Binding
 	Inventory key.Binding
+	Settings  key.Binding
 	Help      key.Binding
 	Quit      key.Binding
 	Select    key.Binding
@@ -97,6 +99,7 @@ func newKeyMap() keyMap {
 		QuickHeal: key.NewBinding(key.WithKeys("c", "C"), key.WithHelp("c", "quick heal")),
 		Interact:  key.NewBinding(key.WithKeys("e", "E"), key.WithHelp("e", "interact")),
 		Inventory: key.NewBinding(key.WithKeys("i", "I"), key.WithHelp("i", "inventory")),
+		Settings:  key.NewBinding(key.WithKeys("p", "P"), key.WithHelp("p", "settings")),
 		Help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit:      key.NewBinding(key.WithKeys("q", "Q"), key.WithHelp("q", "quit safely")),
 		Select:    key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter", "confirm")),
@@ -106,14 +109,15 @@ func newKeyMap() keyMap {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Left, k.Right, k.Up, k.Down, k.Interact, k.QuickHeal, k.Inventory, k.Help, k.Quit}
+	return []key.Binding{k.Left, k.Right, k.Up, k.Down, k.Interact, k.QuickHeal, k.Inventory, k.Settings, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
 		{k.Wait, k.Interact, k.QuickHeal, k.Inventory},
-		{k.Use, k.Help, k.Quit, k.Back},
+		{k.Settings, k.Use, k.Help, k.Quit},
+		{k.Back},
 	}
 }
 
@@ -124,6 +128,7 @@ type Model struct {
 	returnScreen         screen
 	titleMenuIndex       int
 	seedMode             int
+	settingsCursor       int
 	overlay              overlay
 	inventoryPane        inventoryPane
 	inventoryPackCursor  int
@@ -145,6 +150,7 @@ type Model struct {
 	seedInput            textinput.Model
 	seedError            string
 	profile              game.Profile
+	settingsDraft        game.Settings
 	storageError         string
 	hasContinue          bool
 	savedRun             *game.Game
@@ -168,12 +174,12 @@ func NewModel(seed int64, hasLockedSeed bool) *Model {
 		lockedSeed:    seed,
 		hasLockedSeed: hasLockedSeed,
 		styles:        newStyles(),
-		glyphs:        newGlyphSet(),
 		keys:          keys,
 		help:          helpModel,
 		seedInput:     input,
 	}
 	model.loadPersistence()
+	model.applySettings()
 	return model
 }
 
@@ -205,6 +211,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSeed(typed)
 		case screenHelp:
 			return m.updateHelp(typed)
+		case screenSettings:
+			return m.updateSettings(typed)
 		case screenPlaying:
 			switch m.overlay {
 			case overlayInventory:
@@ -239,6 +247,8 @@ func (m *Model) View() string {
 		return m.viewSeed()
 	case screenHelp:
 		return m.viewHelp()
+	case screenSettings:
+		return m.viewSettings()
 	case screenPlaying:
 		switch m.overlay {
 		case overlayRoute:
@@ -273,12 +283,16 @@ func (m *Model) updateTitle(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.returnScreen = screenTitle
 		m.screen = screenHelp
+	case key.Matches(msg, m.keys.Settings):
+		m.openSettings(screenTitle)
 	case key.Matches(msg, m.keys.Select):
 		switch options[m.titleMenuIndex] {
 		case "Continue":
 			m.continueRun()
 		case "New Run":
 			m.beginNewRunFlow()
+		case "Settings":
+			m.openSettings(screenTitle)
 		case "Field Guide":
 			m.returnScreen = screenTitle
 			m.screen = screenHelp
@@ -328,6 +342,42 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Back):
+		m.screen = m.returnScreen
+	case key.Matches(msg, m.keys.Up):
+		m.settingsCursor = clamp(m.settingsCursor-1, 0, 5)
+	case key.Matches(msg, m.keys.Down):
+		m.settingsCursor = clamp(m.settingsCursor+1, 0, 5)
+	case key.Matches(msg, m.keys.Left):
+		if m.settingsCursor >= 4 {
+			m.settingsCursor = 4
+		} else {
+			m.shiftSetting(-1)
+		}
+	case key.Matches(msg, m.keys.Right):
+		if m.settingsCursor >= 4 {
+			m.settingsCursor = 5
+		} else {
+			m.shiftSetting(1)
+		}
+	case key.Matches(msg, m.keys.Select):
+		switch m.settingsCursor {
+		case 0, 1, 2, 3:
+			m.shiftSetting(1)
+		case 4:
+			m.profile.Settings = m.settingsDraft.Normalized()
+			m.applySettings()
+			m.saveProfile()
+			m.screen = m.returnScreen
+		case 5:
+			m.screen = m.returnScreen
+		}
+	}
+	return m, nil
+}
+
 func (m *Model) updateOutcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	options := m.outcomeMenuOptions()
 	switch {
@@ -367,6 +417,8 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.returnScreen = screenPlaying
 		m.screen = screenHelp
+	case key.Matches(msg, m.keys.Settings):
+		m.openSettings(screenPlaying)
 	case key.Matches(msg, m.keys.Inventory):
 		m.overlay = overlayInventory
 		m.inventoryPane = inventoryPanePack
@@ -402,8 +454,12 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.overlay = overlayBoss
 			m.bossChoice = 0
 		case game.InteractionDescend:
-			m.overlay = overlayDescend
-			m.descendChoice = 0
+			if m.profile.Settings.ConfirmBeforeDescend {
+				m.overlay = overlayDescend
+				m.descendChoice = 0
+			} else {
+				m.confirmDescend()
+			}
 		default:
 			m.game.AddLog("Nothing here answers your hand.")
 		}
@@ -739,6 +795,7 @@ func (m *Model) loadPersistence() {
 	} else {
 		m.storageError = err.Error()
 	}
+	m.profile.Settings = m.profile.Settings.Normalized()
 	run, err := game.LoadRun()
 	if err == nil {
 		m.savedRun = run
@@ -756,12 +813,58 @@ func (m *Model) saveProfile() {
 	}
 }
 
+func (m *Model) applySettings() {
+	m.profile.Settings = m.profile.Settings.Normalized()
+	m.settingsDraft = m.profile.Settings
+	m.glyphs = newGlyphSet(m.profile.Settings)
+}
+
+func (m *Model) openSettings(returnScreen screen) {
+	m.returnScreen = returnScreen
+	m.settingsCursor = 0
+	m.settingsDraft = m.profile.Settings.Normalized()
+	m.screen = screenSettings
+}
+
+func (m *Model) shiftSetting(delta int) {
+	settings := m.settingsDraft.Normalized()
+	switch m.settingsCursor {
+	case 0:
+		modes := []game.GlyphMode{game.GlyphModeAuto, game.GlyphModeNerd, game.GlyphModeASCII}
+		index := 0
+		for current, mode := range modes {
+			if settings.GlyphMode == mode {
+				index = current
+				break
+			}
+		}
+		index = (index + len(modes) + delta) % len(modes)
+		settings.GlyphMode = modes[index]
+	case 1:
+		settings.ASCIIFallback = !settings.ASCIIFallback
+	case 2:
+		settings.ConfirmBeforeDescend = !settings.ConfirmBeforeDescend
+	case 3:
+		values := []int{20, 28, 36}
+		index := 0
+		for current, value := range values {
+			if settings.MessageLogLines == value {
+				index = current
+				break
+			}
+		}
+		index = (index + len(values) + delta) % len(values)
+		settings.MessageLogLines = values[index]
+	}
+	m.settingsDraft = settings
+}
+
 func (m *Model) titleMenuOptions() []string {
-	options := make([]string, 0, 4)
+	options := make([]string, 0, 5)
 	if m.hasContinue {
 		options = append(options, "Continue")
 	}
-	options = append(options, "New Run", "Field Guide", "Quit")
+	options = append(options, "New Run", "Settings", "Field Guide", "Quit")
 	return options
 }
 

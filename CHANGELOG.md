@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1
+
+### Added
+
+- Added a persistent Settings screen from the title menu and with in-game `p`, covering glyph mode, ASCII fallback, descend confirmation, and log length.
+- Added stronger poison and fire status support with clearer combat logs, sidebar indicators, curatives, and resistance gear.
+- Added an ultra-rare unique enemy drop jackpot while keeping the final boss chest as the premium reliable source of uniques.
+
+### Changed
+
+- Rebuilt the route-choice screen into a real node-map presentation with branch highlighting and a dedicated detail panel.
+- Increased combat pressure across the run through harder enemy baselines, sharper scaling, stronger bosses and elites, and lower passive sustain.
+- Reworked UI chrome so panels, menus, logs, and gameplay read cleanly without forcing a custom full-screen background.
+
 ## 0.3
 
 ### Added
