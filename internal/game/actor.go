@@ -5,6 +5,7 @@ type StatusKind int
 const (
 	StatusPoison StatusKind = iota
 	StatusFocus
+	StatusScorched
 )
 
 type StatusEffect struct {
@@ -19,9 +20,56 @@ func (s StatusEffect) Label() string {
 		return "Poison " + itoa(s.Turns)
 	case StatusFocus:
 		return "Focus " + itoa(s.Turns)
+	case StatusScorched:
+		return "Scorch " + itoa(s.Turns)
 	default:
 		return "Unknown"
 	}
+}
+
+type KeyRing struct {
+	Bronze int
+	Silver int
+	Gold   int
+}
+
+func (k *KeyRing) Add(tier KeyTier, amount int) {
+	switch tier {
+	case KeyBronze:
+		k.Bronze += amount
+	case KeySilver:
+		k.Silver += amount
+	case KeyGold:
+		k.Gold += amount
+	}
+}
+
+func (k KeyRing) Count(tier KeyTier) int {
+	switch tier {
+	case KeyBronze:
+		return k.Bronze
+	case KeySilver:
+		return k.Silver
+	case KeyGold:
+		return k.Gold
+	default:
+		return 0
+	}
+}
+
+func (k *KeyRing) Spend(tier KeyTier) bool {
+	if k.Count(tier) <= 0 {
+		return false
+	}
+	switch tier {
+	case KeyBronze:
+		k.Bronze--
+	case KeySilver:
+		k.Silver--
+	case KeyGold:
+		k.Gold--
+	}
+	return true
 }
 
 type Equipment struct {
@@ -56,6 +104,7 @@ type Player struct {
 	Inventory   []Item
 	Equipment   Equipment
 	Statuses    []StatusEffect
+	Keys        KeyRing
 	HasRelic    bool
 }
 
@@ -87,7 +136,7 @@ func (p *Player) DefensePower() int {
 }
 
 func (p *Player) VisionRadius() int {
-	total := 7
+	total := 8
 	for _, item := range p.equippedItems() {
 		total += item.SightBonus
 	}
@@ -134,19 +183,22 @@ func (p *Player) GainXP(amount int) bool {
 	leveled := false
 	for p.XP >= p.NextLevelXP() {
 		p.Level++
-		p.BaseMaxHP += 4
-		p.BaseAttack++
+		p.BaseMaxHP += 5
+		p.BaseAttack += 2
 		if p.Level%2 == 0 {
 			p.BaseDefense++
 		}
-		p.HP = min(p.MaxHP(), p.HP+6)
+		if p.Level%3 == 0 {
+			p.BaseDefense++
+		}
+		p.HP = min(p.MaxHP(), p.HP+8)
 		leveled = true
 	}
 	return leveled
 }
 
 func (p *Player) NextLevelXP() int {
-	return p.Level * 18
+	return 16 + p.Level*16 + (p.Level-1)*(p.Level-1)
 }
 
 func (p *Player) equippedItems() []Item {
@@ -174,16 +226,37 @@ type Enemy struct {
 	LastKnownPlayer Position
 	HasLastKnown    bool
 	Memory          int
+	Cooldown        int
+	Elite           bool
+	Enraged         bool
 }
 
 func (e *Enemy) AttackPower() int {
-	return e.Template.Attack
+	total := e.Template.Attack
+	if e.Elite {
+		total++
+	}
+	if e.Enraged {
+		total += e.Template.EnrageAttackBonus
+	}
+	return total
 }
 
 func (e *Enemy) DefensePower() int {
-	return e.Template.Defense
+	total := e.Template.Defense
+	if e.Elite {
+		total++
+	}
+	return total
 }
 
 func (e *Enemy) IsAlive() bool {
 	return e.HP > 0
+}
+
+func (e *Enemy) DisplayName() string {
+	if e.Elite && e.Template.BossTier == 0 {
+		return "Elite " + e.Template.Name
+	}
+	return e.Template.Name
 }

@@ -1,49 +1,27 @@
 # Dunshell
 
-Dunshell is a single-player terminal roguelike built in Go with Bubble Tea, Lip Gloss, and Charm's TUI tooling. You descend through a drowned abbey, fight through procedural dungeon floors, grow stronger with weapons, armor, charms, and consumables, and hunt the buried relic known as the Cinder Crown.
+Dunshell is a single-player terminal roguelike built in Go with Bubble Tea, Lip Gloss, and Charm TUI tooling. Version `0.3` expands the drowned abbey into a 20-floor run with route-choice descents, boss chambers, keyed reliquaries, merchants, auto-save persistence, miniboss cadence, rarity-driven loot, endless post-victory depths, and persistent omen-tier difficulty.
 
-## Overview
+## Install And Run
 
-- Turn-based dungeon crawling on a procedural grid map
-- Fog of war with line-of-sight field of view
-- Cleared-room tracking with visual completion feedback
-- Multiple themed floors with rising difficulty
-- Inventory, equipment, consumables, loot drops, leveling, and room-clearing feedback
-- Distinct enemies with wandering, chasing, and attack behaviors
-- Bubble Tea-driven title, help, gameplay, victory, and defeat screens
-- Reproducible run seeds with an optional CLI flag
+```bash
+go mod tidy
+go run .
+```
 
-## Architecture
+Replay a specific seed from the CLI:
 
-The project is split into two main layers:
+```bash
+go run . -seed 123456789
+```
 
-- `internal/game`: the simulation layer for dungeon generation, map state, actors, combat, AI, items, field of view, progression, and the message log
-- `internal/ui`: the Bubble Tea layer for screen state, terminal input, rendering, layout, and Lip Gloss styling
+## Font And Terminal Notes
 
-This keeps the game rules independent from the terminal presentation, making the dungeon systems easier to extend without tangling rendering code into the core loop.
+- Nerd Font is recommended for the full glyph language.
+- If your terminal/font renders symbols poorly, run with pure ASCII fallback:
 
-## File Structure
-
-```text
-.
-|-- go.mod
-|-- main.go
-|-- README.md
-`-- internal
-    |-- game
-    |   |-- actor.go
-    |   |-- content.go
-    |   |-- fov.go
-    |   |-- game.go
-    |   |-- generator.go
-    |   |-- item.go
-    |   |-- map.go
-    |   |-- path.go
-    |   `-- types.go
-    `-- ui
-        |-- model.go
-        |-- render.go
-        `-- styles.go
+```bash
+DUNSHELL_ASCII=1 go run .
 ```
 
 ## Controls
@@ -51,50 +29,70 @@ This keeps the game rules independent from the terminal presentation, making the
 ### Menus
 
 - `up/down` or `w/s`: move selection
+- `left/right` or `a/d`: switch mode where shown
 - `Enter`: confirm
-- `?`: open help
-- `q` or `Esc`: quit or go back where appropriate
-- Letter keys accept lowercase and uppercase
+- `?`: help
+- `Esc`: back
+- `q`: quit where appropriate
 
 ### In Game
 
 - `arrow keys` or `W/A/S/D`: move
-- `.`: wait one turn
+- `.`: wait
 - `c`: quick heal with the weakest healing consumable
-- `e`: contextually interact with your tile
-- `e` on loot: pick it up
-- `e` on stairs: open the descend confirmation prompt
-- `i`: open inventory in the side panel
-- `left/right` or `A/D`: switch inventory section
-- `up/down` or `W/S`: move inside the inventory
-- `e` or `Enter`: perform the primary inventory action
-- `u`: use a consumable in the inventory
-- `?`: help screen
+- `e`: contextual interact
+- `i`: open inventory
+- `left/right` or `A/D`: switch inventory pane
+- `up/down` or `W/S`: move inside inventory or merchant stock
+- `Enter` or `e`: confirm / buy / use primary action
+- `u`: use selected consumable in the pack
+- `?`: help
 - `q`: safe quit prompt
-- Letter keys accept lowercase and uppercase
 
-## How To Run
+## Save Location
 
-```bash
-go mod tidy
-go run .
-```
+Dunshell stores human-readable JSON saves under the platform config directory:
 
-To replay a specific seed:
+- Linux: `~/.config/dunshell/`
+- macOS: `~/Library/Application Support/dunshell/`
+- Windows: `%AppData%\dunshell\`
 
-```bash
-go run . -seed 123456789
-```
+Files created by `0.3`:
 
-## Design Summary
+- `profile.json`: persistent wins and omen-tier difficulty
+- `run.json`: active run save
+- `run.json.backup`: previous active run snapshot
 
-- Dungeon generation uses room-and-corridor layouts with doors, loot placement, enemy placement, and a special final sanctum floor objective.
-- The gameplay loop is tuned around short tactical runs: fight, loot, clear chambers, manage consumables, descend, level up, and survive status effects.
-- Bubble Tea manages screen transitions and input while Lip Gloss provides the visual hierarchy for map, sidebar, log, menus, and end screens.
-- The map viewport crops around the player so the game still plays well when the terminal is smaller than the generated dungeon.
+## Version 0.3 Systems
 
-## Content Highlights
+- 20-floor main progression with miniboss floors at `5`, `10`, `15`, and the Ashen Prior on `20`
+- Bigger maps with improved Unicode glyph presentation and ASCII fallback
+- Dedicated boss rooms with confirmation prompts, lock-in logic, and visible boss health bars
+- Route-choice map after stair confirmation
+- Bronze, Silver, and Gold chests with matching keys and reward previews
+- Merchant floors with curated five-slot stock and gold pricing
+- Expanded weapons, armor, charms, consumables, rarities, and three chase unique items
+- Stronger scaling, elite route pressure, and post-victory endless continuation
+- Auto-save / load persistence and seed entry flow from the UI
 
-- Enemies: Gutter Rat, Bone Beetle, Lantern Wisp, Mire Hound, Tomb Brigand, Cathedral Knight, and the Ashen Prior
-- Items: healing salves, antivenom, Sunbrew tonic, Ember flask, multiple weapons, armor sets, and charms
-- Objective: reach the Ember Sanctum and claim the Cinder Crown
+## Architecture
+
+- `internal/game`: simulation, content, dungeon generation, AI, combat, progression, route modifiers, economy, and persistence data
+- `internal/ui`: Bubble Tea screen state, terminal input, rendering, layout, glyph handling, and Lip Gloss styling
+
+## Wiki
+
+The detailed game reference now lives in `wiki/`:
+
+- `wiki/progression.md`
+- `wiki/monsters.md`
+- `wiki/bosses.md`
+- `wiki/items.md`
+- `wiki/loot-and-rarities.md`
+- `wiki/merchant-and-economy.md`
+- `wiki/keys-and-chests.md`
+- `wiki/lore.md`
+
+## Build Status
+
+`go test ./...` passes on `0.3`.

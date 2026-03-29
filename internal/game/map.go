@@ -1,5 +1,34 @@
 package game
 
+type Chest struct {
+	ID         int
+	Pos        Position
+	Tier       KeyTier
+	Opened     bool
+	Locked     bool
+	BossReward bool
+	RoomIndex  int
+	Rewards    []ChestReward
+}
+
+type Merchant struct {
+	ID        int
+	Name      string
+	Pos       Position
+	RoomIndex int
+	Offers    []MerchantOffer
+}
+
+type BossEncounter struct {
+	RoomIndex     int
+	Gate          Position
+	Entry         Position
+	BossID        int
+	Active        bool
+	Cleared       bool
+	RewardChestID int
+}
+
 type Floor struct {
 	Level     int
 	Theme     string
@@ -9,14 +38,19 @@ type Floor struct {
 	Visible   [][]bool
 	Explored  [][]bool
 	Rooms     []Room
+	RoomKinds []RoomKind
 	RoomDoors [][]Position
 	Entrance  Position
 	Stairs    Position
 	Items     []GroundItem
 	Enemies   []*Enemy
+	Chests    []Chest
+	Merchants []Merchant
+	Boss      *BossEncounter
+	Modifier  FloorModifier
 }
 
-func NewFloor(level int, width int, height int) *Floor {
+func NewFloor(level int, width int, height int, modifier FloorModifier) *Floor {
 	tiles := make([][]TileType, height)
 	visible := make([][]bool, height)
 	explored := make([][]bool, height)
@@ -32,7 +66,7 @@ func NewFloor(level int, width int, height int) *Floor {
 
 	return &Floor{
 		Level:     level,
-		Theme:     FloorTheme(level),
+		Theme:     FloorThemeName(level),
 		Width:     width,
 		Height:    height,
 		Tiles:     tiles,
@@ -40,6 +74,7 @@ func NewFloor(level int, width int, height int) *Floor {
 		Explored:  explored,
 		RoomDoors: nil,
 		Stairs:    Position{X: -1, Y: -1},
+		Modifier:  modifier,
 	}
 }
 
@@ -114,6 +149,15 @@ func (f *Floor) EnemyAt(pos Position) *Enemy {
 	return nil
 }
 
+func (f *Floor) EnemyByID(id int) *Enemy {
+	for _, enemy := range f.Enemies {
+		if enemy.ID == id {
+			return enemy
+		}
+	}
+	return nil
+}
+
 func (f *Floor) ItemIndicesAt(pos Position) []int {
 	indices := make([]int, 0, 2)
 	for index, item := range f.Items {
@@ -133,6 +177,24 @@ func (f *Floor) TopItemAt(pos Position) (GroundItem, bool) {
 	return GroundItem{}, false
 }
 
+func (f *Floor) ChestAt(pos Position) (*Chest, int) {
+	for index := range f.Chests {
+		if f.Chests[index].Pos.Equals(pos) {
+			return &f.Chests[index], index
+		}
+	}
+	return nil, -1
+}
+
+func (f *Floor) MerchantAt(pos Position) (*Merchant, int) {
+	for index := range f.Merchants {
+		if f.Merchants[index].Pos.Equals(pos) {
+			return &f.Merchants[index], index
+		}
+	}
+	return nil, -1
+}
+
 func (f *Floor) RemoveItemAt(index int) Item {
 	item := f.Items[index].Item
 	f.Items = append(f.Items[:index], f.Items[index+1:]...)
@@ -149,16 +211,31 @@ func (f *Floor) RemoveEnemyByID(id int) *Enemy {
 	return nil
 }
 
+func (f *Floor) ActiveBoss() *Enemy {
+	if f.Boss == nil || !f.Boss.Active {
+		return nil
+	}
+	return f.EnemyByID(f.Boss.BossID)
+}
+
+func (f *Floor) BossGateNearby(pos Position) bool {
+	if f.Boss == nil || f.Boss.Active || f.Boss.Cleared {
+		return false
+	}
+	return distance(pos, f.Boss.Gate) == 1
+}
+
 func (f *Floor) ExploredPercent() int {
 	explored := 0
 	walkable := 0
 	for y := 0; y < f.Height; y++ {
 		for x := 0; x < f.Width; x++ {
-			if f.Tiles[y][x] != TileWall {
-				walkable++
-				if f.Explored[y][x] {
-					explored++
-				}
+			if f.Tiles[y][x] == TileWall {
+				continue
+			}
+			walkable++
+			if f.Explored[y][x] {
+				explored++
 			}
 		}
 	}

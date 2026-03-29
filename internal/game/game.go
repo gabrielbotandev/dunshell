@@ -1,21 +1,19 @@
 package game
 
-import (
-	"fmt"
-	"math/rand"
-	"strings"
-)
+import "strings"
 
 const GameTitle = "Dunshell"
 
 type Summary struct {
-	Seed           int64
-	Floor          int
-	Level          int
-	Gold           int
-	Kills          int
-	Turn           int
-	RecoveredRelic bool
+	Seed                 int64
+	Floor                int
+	Level                int
+	Gold                 int
+	Kills                int
+	Turn                 int
+	RecoveredRelic       bool
+	PersistentDifficulty int
+	Endless              bool
 }
 
 type InteractionKind int
@@ -23,6 +21,9 @@ type InteractionKind int
 const (
 	InteractionNone InteractionKind = iota
 	InteractionPickup
+	InteractionOpenChest
+	InteractionMerchant
+	InteractionBossEntry
 	InteractionDescend
 )
 
@@ -30,6 +31,12 @@ func (k InteractionKind) Label() string {
 	switch k {
 	case InteractionPickup:
 		return "Gather"
+	case InteractionOpenChest:
+		return "Open Chest"
+	case InteractionMerchant:
+		return "Trade"
+	case InteractionBossEntry:
+		return "Enter Lair"
 	case InteractionDescend:
 		return "Descend"
 	default:
@@ -43,25 +50,34 @@ type InteractionContext struct {
 }
 
 type Game struct {
-	Title       string
-	Seed        int64
-	Mode        GameMode
-	FloorIndex  int
-	MaxFloors   int
-	Turn        int
-	Log         []string
-	Player      *Player
-	Floor       *Floor
-	rng         *rand.Rand
-	nextEnemyID int
+	Title                string
+	Seed                 int64
+	Mode                 GameMode
+	FloorIndex           int
+	MaxFloors            int
+	Turn                 int
+	Log                  []string
+	Player               *Player
+	Floor                *Floor
+	PersistentDifficulty int
+	Endless              bool
+	PendingRoutes        []RouteChoice
+	VictoryRecorded      bool
+	rng                  *RNG
+	nextEnemyID          int
+	nextChestID          int
+	nextMerchantID       int
 }
 
-func New(seed int64) *Game {
-	rng := rand.New(rand.NewSource(seed))
+func New(seed int64, persistentDifficulty int) *Game {
+	if seed == 0 {
+		seed = 1
+	}
+	rng := NewRNG(seed)
 	weapon, armor, charm := StarterEquipment()
 	player := &Player{
 		Pos:         Position{},
-		BaseMaxHP:   24,
+		BaseMaxHP:   30,
 		BaseAttack:  4,
 		BaseDefense: 1,
 		Level:       1,
@@ -75,48 +91,72 @@ func New(seed int64) *Game {
 	player.HP = player.MaxHP()
 
 	game := &Game{
-		Title:      GameTitle,
-		Seed:       seed,
-		Mode:       ModePlaying,
-		FloorIndex: 1,
-		MaxFloors:  5,
-		Player:     player,
-		rng:        rng,
-		Log:        make([]string, 0, 128),
+		Title:                GameTitle,
+		Seed:                 seed,
+		Mode:                 ModePlaying,
+		FloorIndex:           1,
+		MaxFloors:            20,
+		Player:               player,
+		PersistentDifficulty: persistentDifficulty,
+		rng:                  rng,
+		Log:                  make([]string, 0, 256),
 	}
 
-	game.Floor = GenerateFloor(game.rng, game.FloorIndex, game.MaxFloors, &game.nextEnemyID)
+	game.Floor = GenerateFloor(game.rng, game.FloorIndex, game.MaxFloors, game.PersistentDifficulty, FloorModifier{}, false, &game.nextEnemyID, &game.nextChestID, &game.nextMerchantID)
 	game.Player.Pos = game.Floor.Entrance
 	ComputeFOV(game.Floor, game.Player.Pos, game.Player.VisionRadius())
-	game.AddLog("The abbey doors seal behind you. Find the Cinder Crown in the Ember Sanctum.")
+	game.AddLog("The abbey doors seal behind you. The Cinder Crown waits twenty floors below.")
+	if game.PersistentDifficulty > 0 {
+		game.AddLog("The abbey remembers your last victory. Its hatred is keener now.")
+	}
 	game.AddLog(game.floorIntro())
 	return game
 }
 
 func (g *Game) Summary() Summary {
 	return Summary{
-		Seed:           g.Seed,
-		Floor:          g.FloorIndex,
-		Level:          g.Player.Level,
-		Gold:           g.Player.Gold,
-		Kills:          g.Player.Kills,
-		Turn:           g.Turn,
-		RecoveredRelic: g.Player.HasRelic,
+		Seed:                 g.Seed,
+		Floor:                g.FloorIndex,
+		Level:                g.Player.Level,
+		Gold:                 g.Player.Gold,
+		Kills:                g.Player.Kills,
+		Turn:                 g.Turn,
+		RecoveredRelic:       g.Player.HasRelic,
+		PersistentDifficulty: g.PersistentDifficulty,
+		Endless:              g.Endless,
 	}
 }
 
 func (g *Game) Objective() string {
-	if g.FloorIndex == g.MaxFloors {
-		if g.Player.HasRelic {
-			return "Escape the sanctum in memory alone."
-		}
-		return "Claim the Cinder Crown."
+	if g.Player.HasRelic && g.Endless {
+		return "Push deeper into the ashfall depths. The run no longer has a floor."
 	}
-	return "Descend to floor " + itoa(g.MaxFloors) + " and claim the Cinder Crown."
+	if g.Player.HasRelic {
+		return "The crown is yours. Choose whether to descend into the endless dark."
+	}
+	if isBossFloor(g.FloorIndex, g.MaxFloors, g.Endless) {
+		boss := g.Floor.ActiveBoss()
+		if boss != nil {
+			return "Break the floor's keeper and claim its reward chest."
+		}
+		return "Find the sealed boss room and enter when the floor is spent."
+	}
+	return "Descend to floor 20, survive the Ashen Prior, and claim the Cinder Crown."
 }
 
 func (g *Game) FloorLabel() string {
-	return "Floor " + itoa(g.FloorIndex) + "  " + g.Floor.Theme
+	label := "Floor " + itoa(g.FloorIndex) + "  " + g.Floor.Theme
+	if g.Floor.Modifier.HasEffect() {
+		label += "  ·  " + g.Floor.Modifier.Label()
+	}
+	if g.Endless && g.FloorIndex > g.MaxFloors {
+		label += "  ·  Endless"
+	}
+	return label
+}
+
+func (g *Game) RouteChoices() []RouteChoice {
+	return append([]RouteChoice(nil), g.PendingRoutes...)
 }
 
 func (g *Game) MovePlayer(dx int, dy int) bool {
@@ -148,6 +188,12 @@ func (g *Game) MovePlayer(dx int, dy int) bool {
 		g.AddLog("You ease open an ironwood door.")
 		g.advanceTurn()
 		return true
+	case TileBossGate:
+		g.AddLog("A blood-locked gate bars the chamber. Press E when you are ready to be sealed in.")
+		return false
+	case TileBossSeal:
+		g.AddLog("The gate will not yield until the keeper falls.")
+		return false
 	case TileFloor, TileDoorOpen, TileStairsDown:
 		g.Player.Pos = target
 		if tile == TileStairsDown {
@@ -173,50 +219,74 @@ func (g *Game) Pickup() bool {
 	if g.Mode != ModePlaying {
 		return false
 	}
-
 	indices := g.Floor.ItemIndicesAt(g.Player.Pos)
 	if len(indices) == 0 {
 		g.AddLog("Nothing here but damp dust.")
 		return false
 	}
-
 	for index := len(indices) - 1; index >= 0; index-- {
 		item := g.Floor.RemoveItemAt(indices[index])
-		if item.Kind == ItemKindRelic {
-			g.Player.HasRelic = true
-			g.AddLog("You lift the Cinder Crown. Emberlight floods the hall.")
-			g.Mode = ModeWon
-			continue
-		}
-		g.Player.Inventory = append(g.Player.Inventory, item)
-		g.AddLog("You gather " + item.Name + ".")
+		g.gainItem(item, "You gather ")
 	}
-
 	if g.Mode == ModePlaying {
 		g.advanceTurn()
 	}
 	return true
 }
 
-func (g *Game) Descend() bool {
+func (g *Game) BeginDescendSelection() bool {
 	if g.Mode != ModePlaying {
 		return false
 	}
-	if !g.Player.Pos.Equals(g.Floor.Stairs) {
+	if !g.CanDescendHere() {
 		g.AddLog("No stair waits beneath your boots.")
 		return false
 	}
-	if g.FloorIndex >= g.MaxFloors {
-		g.AddLog("This is the deepest hall.")
+	if len(g.PendingRoutes) == 0 {
+		nextFloor := g.FloorIndex + 1
+		g.PendingRoutes = GenerateRouteChoices(g.rng, nextFloor, g.MaxFloors, g.Endless)
+	}
+	return true
+}
+
+func (g *Game) DescendWithRoute(index int) bool {
+	if g.Mode != ModePlaying || !g.CanDescendHere() || len(g.PendingRoutes) == 0 {
 		return false
 	}
+	index = clamp(index, 0, len(g.PendingRoutes)-1)
+	choice := g.PendingRoutes[index]
+	g.PendingRoutes = nil
 
 	g.FloorIndex++
-	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, &g.nextEnemyID)
+	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, g.PersistentDifficulty, choice.Modifier, g.Endless, &g.nextEnemyID, &g.nextChestID, &g.nextMerchantID)
 	g.Player.Pos = g.Floor.Entrance
-	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+5)
+	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+6)
+	g.applyFloorArrival(choice.Modifier)
 	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
-	g.AddLog("You descend into " + strings.ToLower(g.Floor.Theme) + ".")
+	g.AddLog("You descend by way of " + strings.ToLower(choice.Title) + ".")
+	g.AddLog(g.floorIntro())
+	return true
+}
+
+func (g *Game) ContinueEndless() bool {
+	if !g.Player.HasRelic {
+		return false
+	}
+	g.Endless = true
+	g.Mode = ModePlaying
+	if g.FloorIndex <= g.MaxFloors {
+		g.FloorIndex = g.MaxFloors + 1
+	} else {
+		g.FloorIndex++
+	}
+	choice := GenerateRouteChoices(g.rng, g.FloorIndex, g.MaxFloors, true)[g.rng.Intn(3)]
+	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, g.PersistentDifficulty, choice.Modifier, true, &g.nextEnemyID, &g.nextChestID, &g.nextMerchantID)
+	g.Player.Pos = g.Floor.Entrance
+	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+g.Player.MaxHP()/4)
+	g.PendingRoutes = nil
+	g.AddLog("You keep the crown and go deeper. The abbey opens a throat beneath the sanctum.")
+	g.applyFloorArrival(choice.Modifier)
+	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
 	g.AddLog(g.floorIntro())
 	return true
 }
@@ -225,30 +295,153 @@ func (g *Game) HasLootHere() bool {
 	return len(g.Floor.ItemIndicesAt(g.Player.Pos)) > 0
 }
 
+func (g *Game) CanOpenChestHere() bool {
+	chest, _ := g.Floor.ChestAt(g.Player.Pos)
+	return chest != nil && !chest.Opened
+}
+
+func (g *Game) CanTradeHere() bool {
+	merchant, _ := g.Floor.MerchantAt(g.Player.Pos)
+	return merchant != nil
+}
+
+func (g *Game) CanEnterBossRoom() bool {
+	return g.Floor.BossGateNearby(g.Player.Pos)
+}
+
 func (g *Game) CanDescendHere() bool {
-	return g.FloorIndex < g.MaxFloors && g.Player.Pos.Equals(g.Floor.Stairs)
+	return g.Player.Pos.Equals(g.Floor.Stairs) && (g.FloorIndex < g.MaxFloors || g.Endless)
 }
 
 func (g *Game) InteractionContext() InteractionContext {
 	context := InteractionContext{}
-	if g.HasLootHere() {
+	switch {
+	case g.HasLootHere():
 		context.Primary = InteractionPickup
+		if g.CanOpenChestHere() {
+			context.Secondary = append(context.Secondary, InteractionOpenChest)
+		}
+		if g.CanTradeHere() {
+			context.Secondary = append(context.Secondary, InteractionMerchant)
+		}
+		if g.CanEnterBossRoom() {
+			context.Secondary = append(context.Secondary, InteractionBossEntry)
+		}
 		if g.CanDescendHere() {
 			context.Secondary = append(context.Secondary, InteractionDescend)
 		}
-		return context
-	}
-	if g.CanDescendHere() {
+	case g.CanOpenChestHere():
+		context.Primary = InteractionOpenChest
+	case g.CanTradeHere():
+		context.Primary = InteractionMerchant
+	case g.CanEnterBossRoom():
+		context.Primary = InteractionBossEntry
+	case g.CanDescendHere():
 		context.Primary = InteractionDescend
 	}
 	return context
+}
+
+func (g *Game) ChestAtPlayer() (*Chest, int) {
+	return g.Floor.ChestAt(g.Player.Pos)
+}
+
+func (g *Game) MerchantAtPlayer() (*Merchant, int) {
+	return g.Floor.MerchantAt(g.Player.Pos)
+}
+
+func (g *Game) BossPreview() *Enemy {
+	if g.Floor.Boss == nil {
+		return nil
+	}
+	return g.Floor.EnemyByID(g.Floor.Boss.BossID)
+}
+
+func (g *Game) ActiveBoss() *Enemy {
+	if g.Floor == nil {
+		return nil
+	}
+	return g.Floor.ActiveBoss()
+}
+
+func (g *Game) EnterBossRoom() bool {
+	if g.Mode != ModePlaying || g.Floor.Boss == nil || !g.CanEnterBossRoom() {
+		return false
+	}
+	g.Player.Pos = g.Floor.Boss.Entry
+	g.Floor.Boss.Active = true
+	for _, door := range g.Floor.RoomDoors[g.Floor.Boss.RoomIndex] {
+		g.Floor.SetTile(door, TileBossSeal)
+	}
+	g.AddLog("The gate slams shut behind you. The chamber belongs to the keeper now.")
+	g.advanceTurn()
+	return true
+}
+
+func (g *Game) OpenChest(index int) bool {
+	if g.Mode != ModePlaying {
+		return false
+	}
+	if index < 0 || index >= len(g.Floor.Chests) {
+		return false
+	}
+	chest := &g.Floor.Chests[index]
+	if chest.Opened {
+		g.AddLog("The chest is already empty.")
+		return false
+	}
+	if chest.Locked {
+		g.AddLog("The chest stays sealed until the keeper is broken.")
+		return false
+	}
+	if !g.Player.Keys.Spend(chest.Tier) {
+		g.AddLog("You need a " + chest.Tier.LowerLabel() + " key for this chest.")
+		return false
+	}
+	chest.Opened = true
+	g.AddLog("You break the " + chest.Tier.LowerLabel() + " seal and lift the lid.")
+	for _, reward := range chest.Rewards {
+		if reward.Kind == RewardGold {
+			g.Player.Gold += reward.Gold
+			g.AddLog("You claim " + itoa(reward.Gold) + " gold.")
+			continue
+		}
+		g.gainItem(reward.Item, "You claim ")
+	}
+	if g.Mode == ModePlaying {
+		g.advanceTurn()
+	}
+	return true
+}
+
+func (g *Game) BuyMerchantOffer(merchantIndex int, offerIndex int) bool {
+	if g.Mode != ModePlaying || merchantIndex < 0 || merchantIndex >= len(g.Floor.Merchants) {
+		return false
+	}
+	merchant := &g.Floor.Merchants[merchantIndex]
+	if offerIndex < 0 || offerIndex >= len(merchant.Offers) {
+		return false
+	}
+	offer := &merchant.Offers[offerIndex]
+	if offer.Sold {
+		g.AddLog("That stock is already gone.")
+		return false
+	}
+	if g.Player.Gold < offer.Price {
+		g.AddLog("You do not have enough gold for " + offer.Item.Name + ".")
+		return false
+	}
+	g.Player.Gold -= offer.Price
+	offer.Sold = true
+	g.gainItem(offer.Item, "You buy ")
+	g.advanceTurn()
+	return true
 }
 
 func (g *Game) UseItem(index int) bool {
 	if g.Mode != ModePlaying || index < 0 || index >= len(g.Player.Inventory) {
 		return false
 	}
-
 	item := g.Player.Inventory[index]
 	if item.Kind != ItemKindConsumable {
 		g.AddLog(item.Name + " is not something you can drink or throw.")
@@ -265,30 +458,30 @@ func (g *Game) UseItem(index int) bool {
 		}
 		healed := g.Player.HP - before
 		if healed == 0 && !item.PoisonCure {
-			g.AddLog("The salve would be wasted right now.")
+			g.AddLog("The draught would be wasted right now.")
 			return false
 		}
 		if item.PoisonCure {
 			g.AddLog("You steady your breath with " + item.Name + ".")
 		} else {
-			g.AddLog("You patch yourself up for " + itoa(healed) + " HP.")
+			g.AddLog("You recover " + itoa(healed) + " HP with " + item.Name + ".")
 		}
 		consumed = true
 	case item.FocusTurns > 0:
 		g.Player.ApplyStatus(StatusFocus, item.FocusTurns, item.FocusBonus)
-		g.AddLog("Sunbrew heats your blood. Your strikes sharpen.")
+		g.AddLog("Your blood runs hot. The next blows will land harder.")
 		consumed = true
 	case item.EmberDamage > 0:
 		target := g.nearestVisibleEnemy()
 		if target == nil {
-			g.AddLog("The flask has no mark to chase.")
+			g.AddLog("The phial finds no mark.")
 			return false
 		}
-		damage := item.EmberDamage + g.rng.Intn(3)
+		damage := item.EmberDamage + g.rng.Intn(4)
 		target.HP -= damage
-		g.AddLog("Ember arcs into " + target.Template.Name + " for " + itoa(damage) + ".")
+		g.AddLog("Ember arcs into " + target.DisplayName() + " for " + itoa(damage) + ".")
 		if target.HP <= 0 {
-			g.killEnemy(target, "The ember blast shatters "+target.Template.Name+".")
+			g.killEnemy(target, "The ember blast shatters "+target.DisplayName()+".")
 		}
 		consumed = true
 	}
@@ -296,7 +489,6 @@ func (g *Game) UseItem(index int) bool {
 	if !consumed {
 		return false
 	}
-
 	g.Player.Inventory = append(g.Player.Inventory[:index], g.Player.Inventory[index+1:]...)
 	if g.Mode == ModePlaying {
 		g.advanceTurn()
@@ -322,7 +514,6 @@ func (g *Game) EquipItem(index int) bool {
 	if g.Mode != ModePlaying || index < 0 || index >= len(g.Player.Inventory) {
 		return false
 	}
-
 	item := g.Player.Inventory[index]
 	if item.Kind != ItemKindEquipment {
 		g.AddLog("That belongs in the pack, not on your body.")
@@ -331,7 +522,6 @@ func (g *Game) EquipItem(index int) bool {
 
 	oldMax := g.Player.MaxHP()
 	g.Player.Inventory = append(g.Player.Inventory[:index], g.Player.Inventory[index+1:]...)
-
 	switch item.Slot {
 	case SlotWeapon:
 		if g.Player.Equipment.Weapon != nil {
@@ -352,7 +542,6 @@ func (g *Game) EquipItem(index int) bool {
 		equipped := item
 		g.Player.Equipment.Charm = &equipped
 	}
-
 	newMax := g.Player.MaxHP()
 	if newMax > oldMax {
 		g.Player.HP += newMax - oldMax
@@ -367,10 +556,7 @@ func (g *Game) Unequip(slot EquipmentSlot) bool {
 	if g.Mode != ModePlaying {
 		return false
 	}
-
-	oldMax := g.Player.MaxHP()
 	var item *Item
-
 	switch slot {
 	case SlotWeapon:
 		item = g.Player.Equipment.Weapon
@@ -382,17 +568,12 @@ func (g *Game) Unequip(slot EquipmentSlot) bool {
 		item = g.Player.Equipment.Charm
 		g.Player.Equipment.Charm = nil
 	}
-
 	if item == nil {
 		g.AddLog("That slot is already empty.")
 		return false
 	}
-
 	g.Player.Inventory = append(g.Player.Inventory, *item)
 	g.Player.ClampHP()
-	if g.Player.MaxHP() < oldMax {
-		g.Player.ClampHP()
-	}
 	g.AddLog("You stow " + item.Name + ".")
 	g.advanceTurn()
 	return true
@@ -419,6 +600,12 @@ func (g *Game) VisibleItems() []GroundItem {
 }
 
 func (g *Game) TileDescriptionUnderPlayer() string {
+	if chest, _ := g.Floor.ChestAt(g.Player.Pos); chest != nil && !chest.Opened {
+		return chest.Tier.LowerLabel() + " chest"
+	}
+	if merchant, _ := g.Floor.MerchantAt(g.Player.Pos); merchant != nil {
+		return merchant.Name
+	}
 	tile := g.Floor.TileAt(g.Player.Pos).Name()
 	if items := g.Floor.ItemIndicesAt(g.Player.Pos); len(items) > 0 {
 		item := g.Floor.Items[items[0]].Item
@@ -428,38 +615,30 @@ func (g *Game) TileDescriptionUnderPlayer() string {
 }
 
 func (g *Game) AddLog(message string) {
+	message = strings.TrimSpace(message)
 	if message == "" {
 		return
 	}
 	g.Log = append(g.Log, message)
-	if len(g.Log) > 180 {
-		g.Log = g.Log[len(g.Log)-180:]
+	if len(g.Log) > 240 {
+		g.Log = g.Log[len(g.Log)-240:]
 	}
 }
 
 func (g *Game) floorIntro() string {
-	switch g.FloorIndex {
-	case 1:
-		return "Moss climbs the crypt walls. Old candles still smell faintly sweet."
-	case 2:
-		return "The warrens breathe warm drafts through narrow stone throats."
-	case 3:
-		return "Salt and bone crackle underfoot in the ossuary."
-	case 4:
-		return "Wisps drift like choir lights through the galleries."
-	case 5:
-		return "Heat gathers below. The sanctum keeps its relic behind prayer and ash."
-	default:
-		return "The dark waits."
+	intro := FloorIntro(g.FloorIndex)
+	if g.Floor.Modifier.HasEffect() {
+		intro += " Route omen: " + g.Floor.Modifier.Summary
 	}
+	return intro
 }
 
 func (g *Game) playerAttack(enemy *Enemy) {
 	damage := g.damageRoll(g.Player.AttackPower(), enemy.DefensePower())
 	enemy.HP -= damage
-	g.AddLog("You strike " + enemy.Template.Name + " for " + itoa(damage) + ".")
+	g.AddLog("You strike " + enemy.DisplayName() + " for " + itoa(damage) + ".")
 	if enemy.HP <= 0 {
-		g.killEnemy(enemy, "You finish "+enemy.Template.Name+".")
+		g.killEnemy(enemy, "You finish "+enemy.DisplayName()+".")
 	}
 }
 
@@ -472,20 +651,43 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 	if enemy.Template.GoldMax > enemy.Template.GoldMin {
 		gold += g.rng.Intn(enemy.Template.GoldMax - enemy.Template.GoldMin + 1)
 	}
+	if g.Floor.Modifier.BonusGold > 0 {
+		gold += int(float64(gold) * g.Floor.Modifier.BonusGold)
+	}
 	g.Player.Gold += gold
-	g.AddLog(enemy.Template.Name + " drops " + itoa(gold) + " gold.")
+	g.AddLog(enemy.DisplayName() + " drops " + itoa(gold) + " gold.")
 
-	if item, ok := RandomDropItem(g.rng, g.FloorIndex); ok {
+	bonusDrop := enemy.Elite || enemy.Template.BossTier > 0
+	if item, ok := RandomDropItem(g.rng, g.FloorIndex, g.Floor.Modifier, bonusDrop); ok {
 		g.Floor.Items = append(g.Floor.Items, GroundItem{
 			Pos:       enemy.Pos,
 			Item:      item,
 			RoomIndex: g.Floor.RoomIndexAt(enemy.Pos),
 		})
-		g.AddLog(enemy.Template.Name + " leaves behind " + item.Name + ".")
+		g.AddLog(enemy.DisplayName() + " leaves behind " + item.Name + ".")
 	}
-
+	if bonusDrop && g.rng.Float64() < 0.22 {
+		key := RandomKeyReward(g.rng, g.FloorIndex)
+		g.Floor.Items = append(g.Floor.Items, GroundItem{Pos: enemy.Pos, Item: key, RoomIndex: g.Floor.RoomIndexAt(enemy.Pos)})
+		g.AddLog(enemy.DisplayName() + " spills a " + strings.ToLower(key.Name) + ".")
+	}
 	if g.Player.GainXP(enemy.Template.XPReward) {
 		g.AddLog("You rise to level " + itoa(g.Player.Level) + ".")
+	}
+
+	if g.Floor.Boss != nil && enemy.ID == g.Floor.Boss.BossID {
+		g.Floor.Boss.Cleared = true
+		g.Floor.Boss.Active = false
+		for _, door := range g.Floor.RoomDoors[g.Floor.Boss.RoomIndex] {
+			g.Floor.SetTile(door, TileDoorOpen)
+		}
+		if chestIndex := g.findChestIndex(g.Floor.Boss.RewardChestID); chestIndex >= 0 {
+			chest := &g.Floor.Chests[chestIndex]
+			chest.Locked = false
+			key := KeyItem(chest.Tier)
+			g.gainItem(key, "The keeper drops ")
+			g.AddLog("The boss chest unlocks with a deep iron click.")
+		}
 	}
 }
 
@@ -493,20 +695,17 @@ func (g *Game) advanceTurn() {
 	if g.Mode != ModePlaying {
 		return
 	}
-
 	g.Turn++
 	g.runEnemyTurns()
 	if g.Mode != ModePlaying {
 		return
 	}
-
 	g.tickPlayerStatuses()
 	if g.Player.HP <= 0 {
 		g.Mode = ModeLost
 		g.AddLog("The abbey finally claims you.")
 		return
 	}
-
 	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
 }
 
@@ -518,24 +717,41 @@ func (g *Game) runEnemyTurns() {
 		if !enemy.IsAlive() {
 			continue
 		}
+		if g.Floor.Boss != nil && enemy.ID == g.Floor.Boss.BossID && !g.Floor.Boss.Active {
+			continue
+		}
+		if enemy.Cooldown > 0 {
+			enemy.Cooldown--
+		}
+		if enemy.Template.EnrageThreshold > 0 && !enemy.Enraged && enemy.HP*100 <= enemy.Template.MaxHP*enemy.Template.EnrageThreshold {
+			enemy.Enraged = true
+			if g.Floor.IsVisible(enemy.Pos) {
+				g.AddLog(enemy.DisplayName() + " surges into a hotter fury.")
+			}
+		}
 
-		if distance(enemy.Pos, g.Player.Pos) == 1 {
+		dist := distance(enemy.Pos, g.Player.Pos)
+		playerVisible := dist <= enemy.Template.Sight && hasLineOfSight(g.Floor, enemy.Pos, g.Player.Pos)
+		if playerVisible {
+			enemy.State = AIStateChase
+			enemy.LastKnownPlayer = g.Player.Pos
+			enemy.HasLastKnown = true
+			enemy.Memory = 5
+		}
+
+		if playerVisible && dist > 1 && enemy.Template.BurstRange > 0 && dist <= enemy.Template.BurstRange && enemy.Cooldown == 0 {
+			g.enemyBurst(enemy)
+			continue
+		}
+		if dist == 1 {
 			enemy.State = AIStateAttack
 			g.enemyAttack(enemy)
 			continue
 		}
 
-		playerVisible := distance(enemy.Pos, g.Player.Pos) <= enemy.Template.Sight && hasLineOfSight(g.Floor, enemy.Pos, g.Player.Pos)
-		if playerVisible {
-			enemy.State = AIStateChase
-			enemy.LastKnownPlayer = g.Player.Pos
-			enemy.HasLastKnown = true
-			enemy.Memory = 4
-		}
-
 		switch enemy.Template.Behavior {
 		case BehaviorSkittish:
-			if enemy.HP <= enemy.Template.MaxHP/2 && distance(enemy.Pos, g.Player.Pos) <= 3 {
+			if enemy.HP <= enemy.Template.MaxHP/2 && dist <= 3 {
 				if g.enemyStepAway(enemy) {
 					continue
 				}
@@ -583,12 +799,13 @@ func (g *Game) enemyStepAway(enemy *Enemy) bool {
 
 func (g *Game) enemyWander(enemy *Enemy) bool {
 	directions := g.rng.Perm(len(cardinalDirections))
+	blocked := g.blockedTiles(enemy.ID)
 	for _, index := range directions {
 		next := enemy.Pos.Add(cardinalDirections[index])
-		if distance(next, enemy.Home) > 6 && enemy.Template.Behavior != BehaviorHunter && enemy.Template.Behavior != BehaviorProwler {
+		if distance(next, enemy.Home) > 6 && enemy.Template.Behavior != BehaviorHunter && enemy.Template.Behavior != BehaviorProwler && enemy.Template.Behavior != BehaviorBoss {
 			continue
 		}
-		if !g.Floor.InBounds(next) || g.blockedTiles(enemy.ID)[next] {
+		if !g.Floor.InBounds(next) || blocked[next] {
 			continue
 		}
 		if !g.Floor.IsWalkableFor(next, enemy.Template.CanOpenDoors) {
@@ -619,23 +836,39 @@ func (g *Game) enemyAttack(enemy *Enemy) {
 		damage++
 	}
 	g.Player.HP -= damage
-	g.AddLog(enemy.Template.Name + " hits you for " + itoa(damage) + ".")
-
+	g.AddLog(enemy.DisplayName() + " hits you for " + itoa(damage) + ".")
 	if enemy.Template.GoldStealMax > 0 && g.Player.Gold > 0 {
 		stolen := min(g.Player.Gold, 1+g.rng.Intn(enemy.Template.GoldStealMax))
 		g.Player.Gold -= stolen
-		g.AddLog(enemy.Template.Name + " palms " + itoa(stolen) + " of your gold.")
+		g.AddLog(enemy.DisplayName() + " palms " + itoa(stolen) + " of your gold.")
 	}
-
 	if enemy.Template.PoisonChance > 0 && g.rng.Float64() < enemy.Template.PoisonChance {
 		g.Player.ApplyStatus(StatusPoison, enemy.Template.PoisonTurns, 1)
-		g.AddLog(enemy.Template.Name + " leaves a burning poison in the wound.")
+		g.AddLog(enemy.DisplayName() + " leaves venom in the wound.")
 	}
-
 	if g.Player.HP <= 0 {
 		g.Player.HP = 0
 		g.Mode = ModeLost
-		g.AddLog("You collapse beneath " + enemy.Template.Name + ".")
+		g.AddLog("You collapse beneath " + enemy.DisplayName() + ".")
+	}
+}
+
+func (g *Game) enemyBurst(enemy *Enemy) {
+	damage := g.damageRoll(enemy.Template.BurstDamage, max(0, g.Player.DefensePower()/2))
+	g.Player.HP -= damage
+	enemy.Cooldown = enemy.Template.BurstCooldown
+	label := enemy.Template.BurstName
+	if label == "" {
+		label = "ranged strike"
+	}
+	g.AddLog(enemy.DisplayName() + " uses " + label + " for " + itoa(damage) + ".")
+	if enemy.Template.BurstStatusTurns > 0 {
+		g.Player.ApplyStatus(enemy.Template.BurstStatus, enemy.Template.BurstStatusTurns, max(1, enemy.Template.BurstStatusPotency))
+	}
+	if g.Player.HP <= 0 {
+		g.Player.HP = 0
+		g.Mode = ModeLost
+		g.AddLog("You are broken by " + enemy.DisplayName() + ".")
 	}
 }
 
@@ -646,12 +879,15 @@ func (g *Game) tickPlayerStatuses() {
 		case StatusPoison:
 			g.Player.HP -= status.Potency
 			g.AddLog("Poison burns for " + itoa(status.Potency) + ".")
+		case StatusScorched:
+			g.Player.HP -= max(1, status.Potency)
+			g.AddLog("The scorch gnaws for " + itoa(max(1, status.Potency)) + ".")
 		}
 		status.Turns--
 		if status.Turns > 0 {
 			nextStatuses = append(nextStatuses, status)
 		} else if status.Kind == StatusFocus {
-			g.AddLog("The sunbrew edge fades.")
+			g.AddLog("The tonic's edge fades.")
 		}
 	}
 	g.Player.Statuses = nextStatuses
@@ -677,30 +913,24 @@ func (g *Game) nearestVisibleEnemy() *Enemy {
 func (g *Game) quickHealCandidate() (int, Item, int, bool) {
 	bestIndex := -1
 	bestItem := Item{}
-
 	for index, item := range g.Player.Inventory {
 		if item.Kind != ItemKindConsumable || item.Heal <= 0 {
 			continue
 		}
-		if bestIndex == -1 ||
-			item.Heal < bestItem.Heal ||
-			(item.Heal == bestItem.Heal && poisonUtilityRank(item) < poisonUtilityRank(bestItem)) {
+		if bestIndex == -1 || item.Heal < bestItem.Heal || (item.Heal == bestItem.Heal && poisonUtilityRank(item) < poisonUtilityRank(bestItem)) {
 			bestIndex = index
 			bestItem = item
 		}
 	}
-
 	if bestIndex == -1 {
 		return -1, Item{}, 0, false
 	}
-
 	count := 0
 	for _, item := range g.Player.Inventory {
 		if item.ID == bestItem.ID {
 			count++
 		}
 	}
-
 	return bestIndex, bestItem, count, true
 }
 
@@ -712,7 +942,7 @@ func poisonUtilityRank(item Item) int {
 }
 
 func (g *Game) blockedTiles(exceptEnemyID int) map[Position]bool {
-	blocked := make(map[Position]bool, len(g.Floor.Enemies))
+	blocked := make(map[Position]bool, len(g.Floor.Enemies)+1)
 	for _, enemy := range g.Floor.Enemies {
 		if enemy.ID == exceptEnemyID {
 			continue
@@ -724,14 +954,52 @@ func (g *Game) blockedTiles(exceptEnemyID int) map[Position]bool {
 }
 
 func (g *Game) damageRoll(attack int, defense int) int {
-	rolledAttack := attack + g.rng.Intn(4)
+	rolledAttack := attack + g.rng.Intn(max(3, 3+attack/3))
 	rolledDefense := defense
 	if defense > 0 {
-		rolledDefense += g.rng.Intn(defense + 1)
+		rolledDefense += g.rng.Intn(2 + defense)
 	}
 	return max(1, rolledAttack-rolledDefense/2)
 }
 
+func (g *Game) gainItem(item Item, prefix string) {
+	switch item.Kind {
+	case ItemKindKey:
+		g.Player.Keys.Add(item.KeyTier, 1)
+		g.AddLog(prefix + strings.ToLower(item.Name) + ".")
+	case ItemKindRelic:
+		g.Player.HasRelic = true
+		g.AddLog("You lift the Cinder Crown. Emberlight floods the hall.")
+		g.Mode = ModeWon
+	default:
+		g.Player.Inventory = append(g.Player.Inventory, item)
+		g.AddLog(prefix + item.Name + ".")
+	}
+}
+
+func (g *Game) applyFloorArrival(modifier FloorModifier) {
+	if modifier.GuaranteedKey != nil {
+		g.gainItem(KeyItem(*modifier.GuaranteedKey), "Route gift: ")
+	}
+	if modifier.Rest {
+		g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+modifier.HealOnStart)
+		if modifier.CleanseOnRest {
+			g.Player.RemoveStatus(StatusPoison)
+			g.Player.RemoveStatus(StatusScorched)
+		}
+		g.AddLog("A brief sanctuary steadies your hands before the next halls.")
+	}
+}
+
+func (g *Game) findChestIndex(id int) int {
+	for index, chest := range g.Floor.Chests {
+		if chest.ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
 func (g *Game) DebugState() string {
-	return fmt.Sprintf("floor=%d turn=%d enemies=%d items=%d", g.FloorIndex, g.Turn, len(g.Floor.Enemies), len(g.Floor.Items))
+	return "floor=" + itoa(g.FloorIndex) + " turn=" + itoa(g.Turn) + " enemies=" + itoa(len(g.Floor.Enemies)) + " items=" + itoa(len(g.Floor.Items))
 }

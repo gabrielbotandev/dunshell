@@ -3,6 +3,7 @@ package game
 type RoomState struct {
 	Index            int
 	Room             Room
+	Kind             RoomKind
 	ExploredTiles    int
 	TotalTiles       int
 	Explored         bool
@@ -110,6 +111,9 @@ func (f *Floor) RoomState(roomIndex int) RoomState {
 		Index: roomIndex,
 		Room:  room,
 	}
+	if roomIndex < len(f.RoomKinds) {
+		state.Kind = f.RoomKinds[roomIndex]
+	}
 
 	for y := room.Y; y < room.Y+room.H; y++ {
 		for x := room.X; x < room.X+room.W; x++ {
@@ -143,6 +147,12 @@ func (f *Floor) RoomState(roomIndex int) RoomState {
 		}
 	}
 
+	for _, chest := range f.Chests {
+		if chest.RoomIndex == roomIndex && !chest.Opened {
+			state.RemainingItems++
+		}
+	}
+
 	state.Explored = state.TotalTiles > 0 && state.ExploredTiles == state.TotalTiles
 	state.DoorsOpen = state.OpenDoors == state.TotalDoors
 	state.EnemiesCleared = state.RemainingEnemies == 0
@@ -153,8 +163,13 @@ func (f *Floor) RoomState(roomIndex int) RoomState {
 
 func (f *Floor) Completion() FloorCompletion {
 	completion := FloorCompletion{
-		RemainingItems: len(f.Items),
-		TotalRooms:     len(f.Rooms),
+		TotalRooms: len(f.Rooms),
+	}
+	completion.RemainingItems = len(f.Items)
+	for _, chest := range f.Chests {
+		if !chest.Opened {
+			completion.RemainingItems++
+		}
 	}
 
 	for y := 0; y < f.Height; y++ {

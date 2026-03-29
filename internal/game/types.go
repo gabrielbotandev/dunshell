@@ -37,6 +37,28 @@ func (r Room) Intersects(other Room) bool {
 		r.Y <= other.Y+other.H && r.Y+r.H >= other.Y
 }
 
+type RoomKind int
+
+const (
+	RoomNormal RoomKind = iota
+	RoomMerchant
+	RoomBoss
+	RoomSanctuary
+)
+
+func (k RoomKind) Label() string {
+	switch k {
+	case RoomMerchant:
+		return "merchant"
+	case RoomBoss:
+		return "boss room"
+	case RoomSanctuary:
+		return "sanctuary"
+	default:
+		return "chamber"
+	}
+}
+
 type TileType int
 
 const (
@@ -45,6 +67,8 @@ const (
 	TileDoorClosed
 	TileDoorOpen
 	TileStairsDown
+	TileBossGate
+	TileBossSeal
 )
 
 func (t TileType) Glyph() rune {
@@ -59,6 +83,10 @@ func (t TileType) Glyph() rune {
 		return '/'
 	case TileStairsDown:
 		return '>'
+	case TileBossGate:
+		return 'X'
+	case TileBossSeal:
+		return '#'
 	default:
 		return ' '
 	}
@@ -76,6 +104,10 @@ func (t TileType) Name() string {
 		return "open door"
 	case TileStairsDown:
 		return "stair"
+	case TileBossGate:
+		return "blood-locked gate"
+	case TileBossSeal:
+		return "sealed gate"
 	default:
 		return "void"
 	}
@@ -114,8 +146,160 @@ const (
 	BehaviorHunter
 	BehaviorCutpurse
 	BehaviorSentinel
+	BehaviorCaster
 	BehaviorBoss
 )
+
+type Rarity int
+
+const (
+	RarityCommon Rarity = iota
+	RarityUncommon
+	RarityRare
+	RarityLegendary
+	RarityUnique
+)
+
+func (r Rarity) Label() string {
+	switch r {
+	case RarityCommon:
+		return "Common"
+	case RarityUncommon:
+		return "Uncommon"
+	case RarityRare:
+		return "Rare"
+	case RarityLegendary:
+		return "Legendary"
+	case RarityUnique:
+		return "Unique"
+	default:
+		return "Unknown"
+	}
+}
+
+func (r Rarity) Tint() string {
+	switch r {
+	case RarityCommon:
+		return "#c9c1b4"
+	case RarityUncommon:
+		return "#84be7f"
+	case RarityRare:
+		return "#69a8d6"
+	case RarityLegendary:
+		return "#e6b15a"
+	case RarityUnique:
+		return "#d8708c"
+	default:
+		return "#c9c1b4"
+	}
+}
+
+type KeyTier int
+
+const (
+	KeyBronze KeyTier = iota
+	KeySilver
+	KeyGold
+)
+
+func (k KeyTier) Label() string {
+	switch k {
+	case KeyBronze:
+		return "Bronze"
+	case KeySilver:
+		return "Silver"
+	case KeyGold:
+		return "Gold"
+	default:
+		return "Unknown"
+	}
+}
+
+func (k KeyTier) LowerLabel() string {
+	switch k {
+	case KeyBronze:
+		return "bronze"
+	case KeySilver:
+		return "silver"
+	case KeyGold:
+		return "gold"
+	default:
+		return "unknown"
+	}
+}
+
+func (k KeyTier) Tint() string {
+	switch k {
+	case KeyBronze:
+		return "#b6844e"
+	case KeySilver:
+		return "#aebccc"
+	case KeyGold:
+		return "#dfbb58"
+	default:
+		return "#c9c1b4"
+	}
+}
+
+type RewardKind int
+
+const (
+	RewardGold RewardKind = iota
+	RewardItem
+)
+
+type FloorModifier struct {
+	ID            string
+	Title         string
+	Subtitle      string
+	Summary       string
+	Merchant      bool
+	Rest          bool
+	HealOnStart   int
+	CleanseOnRest bool
+	BonusGold     float64
+	LootBonus     int
+	EnemyBonus    int
+	EliteChance   float64
+	ExtraChests   int
+	GuaranteedKey *KeyTier
+	Cursed        bool
+}
+
+func (m FloorModifier) Label() string {
+	if m.Title == "" {
+		return "Unmarked Descent"
+	}
+	return m.Title
+}
+
+func (m FloorModifier) HasEffect() bool {
+	return m.ID != ""
+}
+
+type RouteChoice struct {
+	ID        string
+	Title     string
+	Subtitle  string
+	Reward    string
+	Risk      string
+	MapLabel  string
+	Modifier  FloorModifier
+	BossFloor bool
+}
+
+type ChestReward struct {
+	Kind RewardKind
+	Gold int
+	Item Item
+}
+
+func (r ChestReward) Summary() string {
+	if r.Kind == RewardGold {
+		return itoa(r.Gold) + " gold"
+	}
+	return r.Item.Name
+}
 
 func abs(value int) int {
 	if value < 0 {
