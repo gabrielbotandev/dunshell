@@ -19,24 +19,18 @@ var titleArt = []string{
 	" ▀██▀███▀ ▄▀██▀█▄██ ▀██▄▄██▀▄██ ██▄▀█▄▄▄▄██▄██",
 }
 
-func (m *Model) renderTopHeader(width int) string {
-	line := game.GameTitle + "  ·  version " + game.GameVersion
-	return m.styles.HeaderBar.Copy().Width(width).Render(line)
-}
-
 func (m *Model) renderScreen(content string, width int, height int, hPos lipgloss.Position, vPos lipgloss.Position) string {
-	header := m.renderTopHeader(width)
-	availableHeight := max(1, height-lipgloss.Height(header))
+	footer := m.renderFooter(width)
+	availableHeight := max(1, height-lipgloss.Height(footer))
 	body := lipgloss.Place(width, availableHeight, hPos, vPos, content)
-	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
 }
 
 func (m *Model) gameplayMetrics() (int, int, int, int, int) {
 	width := max(100, m.width)
 	height := max(34, m.height)
-	headerHeight := lipgloss.Height(m.renderTopHeader(width))
-	footerHeight := lipgloss.Height(m.styles.Footer.Render(m.help.View(m.keys)))
-	availableHeight := max(24, height-headerHeight-footerHeight)
+	footerHeight := lipgloss.Height(m.renderFooter(width))
+	availableHeight := max(24, height-footerHeight)
 	logHeight := clamp(height/4, 7, 10)
 	if availableHeight-logHeight < 15 {
 		logHeight = max(6, availableHeight-15)
@@ -66,9 +60,16 @@ func (m *Model) viewTitle() string {
 	if m.hasLockedSeed {
 		seedLine = m.styles.Info.Render("CLI seed locked to " + fmt.Sprintf("%d", m.lockedSeed))
 	}
+	modeLine := m.styles.Muted.Render("New runs start in standard mode")
+	if m.cliGodMode {
+		modeLine = m.styles.Warning.Render("CLI god mode armed for new runs")
+	}
 	continueLine := ""
 	if m.hasContinue && m.savedRun != nil {
 		continueLine = m.styles.AccentSoft.Render(fmt.Sprintf("Continue floor %d  ·  level %d  ·  seed %d", m.savedRun.FloorIndex, m.savedRun.Player.Level, m.savedRun.Seed))
+		if m.savedRun.GodMode {
+			continueLine += "  ·  " + m.styles.Warning.Render("GOD MODE")
+		}
 	}
 	metaLine := m.styles.Warning.Render(fmt.Sprintf("Omen tier %d  ·  wins %d", m.profile.Difficulty, m.profile.Wins))
 	copy := wrapText("A dark-fantasy terminal roguelike of sealed boss chambers, route-mapped descents, keyed reliquaries, merchants, escalating minibosses, and a crown the abbey still kills to keep.", 72)
@@ -85,6 +86,7 @@ func (m *Model) viewTitle() string {
 		strings.Join(menuLines, "\n"),
 		"",
 		seedLine,
+		modeLine,
 		metaLine,
 		m.styles.PanelNote.Render("Arrows or W/S move through menus. Enter confirms. Settings now controls glyph mode and descend prompts."),
 	)
@@ -118,8 +120,13 @@ func (m *Model) viewSeed() string {
 		m.styles.Subtitle.Render("Seed"),
 		input,
 		"",
-		m.styles.PanelNote.Render("Left/Right switch mode • Enter starts • Esc returns"),
 	}
+	if m.cliGodMode {
+		lines = append(lines, m.styles.Warning.Render("Developer run: GOD MODE will be active from floor 1."), "")
+	}
+	lines = append(lines,
+		m.styles.PanelNote.Render("Left/Right switch mode • Enter starts • Esc returns"),
+	)
 	if m.seedError != "" {
 		lines = append(lines, "", m.styles.Danger.Render(m.seedError))
 	}
@@ -161,7 +168,7 @@ func (m *Model) viewHelp() string {
 		}),
 		"",
 		m.renderHelpSection("Overlays", []string{
-			"Chest prompts show contents before spending a matching key.",
+			"Chest prompts ask for the key spend without revealing the contents first.",
 			"Merchants stock five offers: healing, weapon, armor, charm, and one extra slot.",
 			"Boss entry prompts warn that the room will seal until the keeper dies.",
 			"Settings persists glyph mode, ASCII fallback, descend confirmation, and message log length.",
@@ -223,10 +230,8 @@ func (m *Model) viewGame() string {
 		return ""
 	}
 	width, height, bodyHeight, logHeight, sidebarWidth := m.gameplayMetrics()
-	footer := m.styles.Footer.Render(m.help.View(m.keys))
-	headerHeight := lipgloss.Height(m.renderTopHeader(width))
 	m.mapViewport = mapViewportState{}
-	bodyOriginY := headerHeight
+	bodyOriginY := 0
 	var body string
 	if width >= 120 {
 		mapWidth := max(54, width-sidebarWidth-1)
@@ -241,8 +246,33 @@ func (m *Model) viewGame() string {
 		body = lipgloss.JoinVertical(lipgloss.Left, mapPanel, sidePanel)
 	}
 	logPanel := m.renderLog(width, logHeight)
-	content := lipgloss.JoinVertical(lipgloss.Left, body, logPanel, footer)
+	content := lipgloss.JoinVertical(lipgloss.Left, body, logPanel)
 	return m.renderScreen(content, width, height, lipgloss.Left, lipgloss.Top)
+}
+
+func (m *Model) renderFooter(width int) string {
+	left := m.styles.Footer.Render("? Help  ·  q Quit")
+	right := m.styles.AccentSoft.Render(game.GameTitle + " " + game.GameVersion)
+	if m.game != nil && m.game.GodMode {
+		right += m.styles.Dim.Render("  ·  ") + m.styles.Warning.Render("GOD MODE")
+	}
+	innerWidth := max(1, width-2)
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > innerWidth {
+		rightPlain := game.GameTitle + " " + game.GameVersion
+		if m.game != nil && m.game.GodMode {
+			rightPlain += " · GOD MODE"
+		}
+		available := max(1, innerWidth-lipgloss.Width(left)-1)
+		right = m.styles.AccentSoft.Render(truncateText(rightPlain, available))
+	}
+	spacer := strings.Repeat(" ", max(1, innerWidth-lipgloss.Width(left)-lipgloss.Width(right)))
+	line := left + spacer + right
+	return m.styles.Footer.Copy().
+		Width(width).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder(), true, false, false, false).
+		BorderForeground(lipgloss.Color("#4d4039")).
+		Render(line)
 }
 
 func (m *Model) viewDescendPrompt() string {
@@ -354,14 +384,6 @@ func (m *Model) viewChestPrompt() string {
 	if chest == nil {
 		return m.viewGame()
 	}
-	contents := make([]string, 0, len(chest.Rewards))
-	for _, reward := range chest.Rewards {
-		if reward.Kind == game.RewardGold {
-			contents = append(contents, m.styles.Gold.Render("• "+reward.Summary()))
-			continue
-		}
-		contents = append(contents, "• "+m.renderRarityName(reward.Item)+" "+m.renderItemName(reward.Item))
-	}
 	keyCount := m.game.Player.Keys.Count(chest.Tier)
 	state := m.styles.Success.Render("Ready")
 	if chest.Locked {
@@ -372,7 +394,7 @@ func (m *Model) viewChestPrompt() string {
 	body := []string{
 		m.styles.keyStyle(chest.Tier).Render(chest.Tier.Label()+" Chest") + "  ·  " + state,
 		"",
-		strings.Join(contents, "\n"),
+		wrapText("Break the seal with a matching key. The reliquary keeps its contents hidden until you commit.", 48),
 		"",
 		m.styles.Muted.Render(fmt.Sprintf("%s keys in ring: %d", chest.Tier.Label(), keyCount)),
 		"",
@@ -435,18 +457,23 @@ func (m *Model) viewOutcome(victory bool) string {
 		"",
 		wrapText(copy, 64),
 		"",
-		"Seed        " + fmt.Sprintf("%d", summary.Seed),
-		"Floor       " + fmt.Sprintf("%d", summary.Floor),
-		"Level       " + fmt.Sprintf("%d", summary.Level),
-		"Gold        " + fmt.Sprintf("%d", summary.Gold),
-		"Kills       " + fmt.Sprintf("%d", summary.Kills),
-		"Turns       " + fmt.Sprintf("%d", summary.Turn),
-		"Omen Tier   " + fmt.Sprintf("%d", summary.PersistentDifficulty),
+	}
+	if m.game.GodMode {
+		lines = append(lines, "Mode        "+m.styles.Warning.Render("GOD MODE"), "")
+	}
+	lines = append(lines,
+		"Seed        "+fmt.Sprintf("%d", summary.Seed),
+		"Floor       "+fmt.Sprintf("%d", summary.Floor),
+		"Level       "+fmt.Sprintf("%d", summary.Level),
+		"Gold        "+fmt.Sprintf("%d", summary.Gold),
+		"Kills       "+fmt.Sprintf("%d", summary.Kills),
+		"Turns       "+fmt.Sprintf("%d", summary.Turn),
+		"Omen Tier   "+fmt.Sprintf("%d", summary.PersistentDifficulty),
 		"",
 		m.renderOutcomeOptions(victory),
 		"",
 		m.styles.PanelNote.Render("Up/Down choose • Enter confirms • n starts a new run"),
-	}
+	)
 	panel := m.styles.modalBox(title, strings.Join(lines, "\n"), 72)
 	return m.renderScreen(panel, width, height, lipgloss.Center, lipgloss.Center)
 }
@@ -657,8 +684,13 @@ func (m *Model) renderStatusSidebar(width int, height int) string {
 		"Lvl   " + m.styles.AccentSoft.Render(fmt.Sprintf("%d", player.Level)) + "   Gold " + m.styles.Gold.Render(fmt.Sprintf("%d", player.Gold)),
 		"ATK   " + m.styles.Attack.Render(fmt.Sprintf("%d", player.AttackPower())) + "   DEF  " + m.styles.Defense.Render(fmt.Sprintf("%d", player.DefensePower())),
 		"Keys  " + m.renderKeyLine(),
-		"State",
 	}
+	if m.game.GodMode {
+		stats = append(stats, "Mode  "+m.styles.Warning.Render("GOD MODE")+"  "+m.styles.Success.Render("Invulnerable"))
+	}
+	stats = append(stats,
+		"State",
+	)
 	stats = append(stats, m.renderStatusSummary(width-4)...)
 	stats = append(stats, m.renderQuickHealPreview())
 	floorLines := []string{
@@ -670,8 +702,6 @@ func (m *Model) renderStatusSidebar(width int, height int) string {
 		"Loot   " + m.renderCountMetric(completion.RemainingItems),
 		"Omen   " + m.styles.Warning.Render(fmt.Sprintf("%d", m.profile.Difficulty)),
 		"Under  " + m.styles.AccentSoft.Render(m.game.TileDescriptionUnderPlayer()),
-		"",
-		m.renderInteractionHint(),
 		"",
 		wrapText(m.game.Objective(), width-6),
 	}
@@ -993,27 +1023,6 @@ func (m *Model) renderCountMetric(count int) string {
 		return m.styles.Success.Render("clear")
 	}
 	return m.styles.Danger.Render(fmt.Sprintf("%d remain", count))
-}
-
-func (m *Model) renderInteractionHint() string {
-	context := m.game.InteractionContext()
-	switch context.Primary {
-	case game.InteractionPickup:
-		return m.styles.Accent.Render("E gathers what lies underfoot.")
-	case game.InteractionOpenChest:
-		return m.styles.Gold.Render("E opens a chest prompt and shows its spoils.")
-	case game.InteractionMerchant:
-		return m.styles.Info.Render("E opens the merchant's stock.")
-	case game.InteractionBossEntry:
-		return m.styles.Danger.Render("E asks the boss gate to seal you in.")
-	case game.InteractionDescend:
-		if m.profile.Settings.ConfirmBeforeDescend {
-			return m.styles.Info.Render("E opens the stair prompt and then the route map.")
-		}
-		return m.styles.Info.Render("E opens the route map immediately.")
-	default:
-		return m.styles.Dim.Render("E has nothing to answer here.")
-	}
 }
 
 func (m *Model) renderSettingLine(index int, label string, value string) string {

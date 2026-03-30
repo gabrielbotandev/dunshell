@@ -371,12 +371,38 @@ func StarterEquipment() (Item, Item, Item) {
 	return ItemByID("hearth_knife"), ItemByID("patched_coat"), ItemByID("lantern_charm")
 }
 
+func godModeEquipment() (Item, Item, Item) {
+	return ItemByID("thorn_of_the_prior"), ItemByID("ashen_vestments"), ItemByID("crownshard_rosary")
+}
+
 func StarterInventory() []Item {
 	return []Item{
 		ItemByID("healing_salve"),
 		ItemByID("healing_salve"),
 		ItemByID("sunbrew_tonic"),
 	}
+}
+
+func godModeInventory() []Item {
+	stacks := []struct {
+		id    string
+		count int
+	}{
+		{id: "saintroot_draught", count: 6},
+		{id: "grave_amber", count: 4},
+		{id: "sunbrew_tonic", count: 4},
+		{id: "ember_phial", count: 6},
+		{id: "antivenom_phial", count: 3},
+		{id: "dousing_salts", count: 3},
+	}
+	inventory := make([]Item, 0, 26)
+	for _, stack := range stacks {
+		item := ItemByID(stack.id)
+		for count := 0; count < stack.count; count++ {
+			inventory = append(inventory, item)
+		}
+	}
+	return inventory
 }
 
 func KeyItem(tier KeyTier) Item {

@@ -4,7 +4,7 @@ import "strings"
 
 const (
 	GameTitle   = "Dunshell"
-	GameVersion = "0.3.1"
+	GameVersion = "0.3.2"
 )
 
 type Summary struct {
@@ -17,6 +17,12 @@ type Summary struct {
 	RecoveredRelic       bool
 	PersistentDifficulty int
 	Endless              bool
+}
+
+type NewGameOptions struct {
+	Seed                 int64
+	PersistentDifficulty int
+	GodMode              bool
 }
 
 type InteractionKind int
@@ -55,6 +61,7 @@ type InteractionContext struct {
 type Game struct {
 	Title                string
 	Seed                 int64
+	GodMode              bool
 	Mode                 GameMode
 	FloorIndex           int
 	MaxFloors            int
@@ -72,11 +79,11 @@ type Game struct {
 	nextMerchantID       int
 }
 
-func New(seed int64, persistentDifficulty int) *Game {
-	if seed == 0 {
-		seed = 1
+func New(options NewGameOptions) *Game {
+	if options.Seed == 0 {
+		options.Seed = 1
 	}
-	rng := NewRNG(seed)
+	rng := NewRNG(options.Seed)
 	weapon, armor, charm := StarterEquipment()
 	player := &Player{
 		Pos:         Position{},
@@ -95,25 +102,72 @@ func New(seed int64, persistentDifficulty int) *Game {
 
 	game := &Game{
 		Title:                GameTitle,
-		Seed:                 seed,
+		Seed:                 options.Seed,
+		GodMode:              options.GodMode,
 		Mode:                 ModePlaying,
 		FloorIndex:           1,
 		MaxFloors:            20,
 		Player:               player,
-		PersistentDifficulty: persistentDifficulty,
+		PersistentDifficulty: options.PersistentDifficulty,
 		rng:                  rng,
 		Log:                  make([]string, 0, 256),
+	}
+	if game.GodMode {
+		game.enableGodModeLoadout()
 	}
 
 	game.Floor = GenerateFloor(game.rng, game.FloorIndex, game.MaxFloors, game.PersistentDifficulty, FloorModifier{}, false, &game.nextEnemyID, &game.nextChestID, &game.nextMerchantID)
 	game.Player.Pos = game.Floor.Entrance
 	ComputeFOV(game.Floor, game.Player.Pos, game.Player.VisionRadius())
+	if game.GodMode {
+		game.AddLog("GOD MODE: the abbey opens for testing, not judgment.")
+	}
 	game.AddLog("The abbey doors seal behind you. The Cinder Crown waits twenty floors below.")
 	if game.PersistentDifficulty > 0 {
 		game.AddLog("The abbey remembers your last victory. Its hatred is keener now.")
 	}
 	game.AddLog(game.floorIntro())
 	return game
+}
+
+func (g *Game) enableGodModeLoadout() {
+	if g == nil || g.Player == nil {
+		return
+	}
+	weapon, armor, charm := godModeEquipment()
+	g.Player.Level = 20
+	g.Player.XP = 0
+	g.Player.BaseMaxHP = 180
+	g.Player.BaseAttack = 30
+	g.Player.BaseDefense = 18
+	g.Player.Gold = 999
+	g.Player.Keys = KeyRing{Bronze: 9, Silver: 9, Gold: 9}
+	g.Player.Inventory = godModeInventory()
+	g.Player.Statuses = nil
+	g.Player.Equipment = Equipment{
+		Weapon: &weapon,
+		Armor:  &armor,
+		Charm:  &charm,
+	}
+	g.Player.HP = g.Player.MaxHP()
+}
+
+func (g *Game) restoreGodModeState() {
+	if g == nil || !g.GodMode || g.Player == nil {
+		return
+	}
+	if g.Player.HP <= 0 {
+		g.Player.HP = g.Player.MaxHP()
+	}
+	nextStatuses := g.Player.Statuses[:0]
+	for _, status := range g.Player.Statuses {
+		if status.Harmful() {
+			continue
+		}
+		nextStatuses = append(nextStatuses, status)
+	}
+	g.Player.Statuses = nextStatuses
+	g.Player.ClampHP()
 }
 
 func (g *Game) Summary() Summary {
@@ -373,7 +427,7 @@ func (g *Game) EnterBossRoom() bool {
 	}
 	g.Player.Pos = g.Floor.Boss.Entry
 	g.Floor.Boss.Active = true
-	for _, door := range g.Floor.RoomDoors[g.Floor.Boss.RoomIndex] {
+	for _, door := range g.bossRoomDoors() {
 		g.Floor.SetTile(door, TileBossSeal)
 	}
 	g.AddLog("The gate slams shut behind you. The chamber belongs to the keeper now.")
@@ -694,7 +748,7 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 	if g.Floor.Boss != nil && enemy.ID == g.Floor.Boss.BossID {
 		g.Floor.Boss.Cleared = true
 		g.Floor.Boss.Active = false
-		for _, door := range g.Floor.RoomDoors[g.Floor.Boss.RoomIndex] {
+		for _, door := range g.bossRoomDoors() {
 			g.Floor.SetTile(door, TileDoorOpen)
 		}
 		if chestIndex := g.findChestIndex(g.Floor.Boss.RewardChestID); chestIndex >= 0 {
@@ -705,6 +759,17 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 			g.AddLog("The boss chest unlocks with a deep iron click.")
 		}
 	}
+}
+
+func (g *Game) bossRoomDoors() []Position {
+	if g == nil || g.Floor == nil || g.Floor.Boss == nil {
+		return nil
+	}
+	doors := append([]Position(nil), g.Floor.RoomDoors[g.Floor.Boss.RoomIndex]...)
+	if !containsPosition(doors, g.Floor.Boss.Gate) {
+		doors = append(doors, g.Floor.Boss.Gate)
+	}
+	return doors
 }
 
 func (g *Game) advanceTurn() {
@@ -851,8 +916,12 @@ func (g *Game) enemyAttack(enemy *Enemy) {
 	if enemy.Template.Behavior == BehaviorHunter && enemy.State == AIStateChase {
 		damage++
 	}
-	g.Player.HP -= damage
-	g.AddLog(enemy.DisplayName() + " hits you for " + itoa(damage) + ".")
+	applied, blocked := g.applyPlayerDamage(damage)
+	if blocked {
+		g.AddLog(enemy.DisplayName() + " strikes, but god mode turns the blow aside.")
+	} else {
+		g.AddLog(enemy.DisplayName() + " hits you for " + itoa(applied) + ".")
+	}
 	if enemy.Template.GoldStealMax > 0 && g.Player.Gold > 0 {
 		stolen := min(g.Player.Gold, 1+g.rng.Intn(enemy.Template.GoldStealMax))
 		g.Player.Gold -= stolen
@@ -870,13 +939,17 @@ func (g *Game) enemyAttack(enemy *Enemy) {
 
 func (g *Game) enemyBurst(enemy *Enemy) {
 	damage := g.damageRoll(enemy.Template.BurstDamage, max(0, g.Player.DefensePower()/2))
-	g.Player.HP -= damage
+	applied, blocked := g.applyPlayerDamage(damage)
 	enemy.Cooldown = enemy.Template.BurstCooldown
 	label := enemy.Template.BurstName
 	if label == "" {
 		label = "ranged strike"
 	}
-	g.AddLog(enemy.DisplayName() + " uses " + label + " for " + itoa(damage) + ".")
+	if blocked {
+		g.AddLog(enemy.DisplayName() + " uses " + label + ", but god mode scatters it harmlessly.")
+	} else {
+		g.AddLog(enemy.DisplayName() + " uses " + label + " for " + itoa(applied) + ".")
+	}
 	if enemy.Template.BurstStatusTurns > 0 {
 		g.applyPlayerStatus(enemy.Template.BurstStatus, enemy.Template.BurstStatusTurns, max(1, enemy.Template.BurstStatusPotency), enemy.DisplayName()+"'s "+label)
 	}
@@ -890,6 +963,10 @@ func (g *Game) enemyBurst(enemy *Enemy) {
 func (g *Game) tickPlayerStatuses() {
 	nextStatuses := make([]StatusEffect, 0, len(g.Player.Statuses))
 	for _, status := range g.Player.Statuses {
+		if g.GodMode && status.Harmful() {
+			g.AddLog("God mode burns away the " + status.Kind.Name() + ".")
+			continue
+		}
 		switch status.Kind {
 		case StatusPoison:
 			g.Player.HP -= status.Potency
@@ -914,6 +991,17 @@ func (g *Game) tickPlayerStatuses() {
 	}
 	g.Player.Statuses = nextStatuses
 	g.Player.ClampHP()
+}
+
+func (g *Game) applyPlayerDamage(amount int) (int, bool) {
+	if amount <= 0 || g.Player == nil {
+		return 0, false
+	}
+	if g.GodMode {
+		return 0, true
+	}
+	g.Player.HP = max(0, g.Player.HP-amount)
+	return amount, false
 }
 
 func (g *Game) nearestVisibleEnemy() *Enemy {
@@ -1045,6 +1133,10 @@ func enemyAttackStatus(enemy *Enemy) (StatusKind, float64, int, int) {
 
 func (g *Game) applyPlayerStatus(kind StatusKind, turns int, potency int, source string) bool {
 	if turns <= 0 || potency <= 0 {
+		return false
+	}
+	if g.GodMode && kind != StatusFocus {
+		g.AddLog(source + " cannot afflict you through god mode.")
 		return false
 	}
 

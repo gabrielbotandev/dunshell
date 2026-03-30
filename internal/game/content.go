@@ -258,16 +258,11 @@ func GenerateRouteChoices(rng *RNG, nextFloor int, maxFloors int, endless bool) 
 }
 
 func RandomEnemyTemplate(rng *RNG, floor int) EnemyTemplate {
-	candidates := make([]EnemyTemplate, 0, len(enemyCatalog))
-	total := 0
-	for _, template := range enemyCatalog {
-		if template.BossTier > 0 {
-			continue
-		}
-		if floor >= template.MinFloor && floor <= template.MaxFloor {
-			candidates = append(candidates, template)
-			total += template.Weight
-		}
+	candidates, total := enemyCandidatesForFloor(floor)
+	if len(candidates) == 0 {
+		// Endless floors continue scaling past authored content, so reuse the deepest
+		// normal enemy band instead of falling all the way back to the first enemy.
+		candidates, total = enemyCandidatesForFloor(deepestNormalEnemyFloor())
 	}
 	if len(candidates) == 0 {
 		return enemyCatalog[0]
@@ -280,6 +275,34 @@ func RandomEnemyTemplate(rng *RNG, floor int) EnemyTemplate {
 		}
 	}
 	return candidates[len(candidates)-1]
+}
+
+func enemyCandidatesForFloor(floor int) ([]EnemyTemplate, int) {
+	candidates := make([]EnemyTemplate, 0, len(enemyCatalog))
+	total := 0
+	for _, template := range enemyCatalog {
+		if template.BossTier > 0 {
+			continue
+		}
+		if floor >= template.MinFloor && floor <= template.MaxFloor {
+			candidates = append(candidates, template)
+			total += template.Weight
+		}
+	}
+	return candidates, total
+}
+
+func deepestNormalEnemyFloor() int {
+	deepest := 1
+	for _, template := range enemyCatalog {
+		if template.BossTier > 0 {
+			continue
+		}
+		if template.MaxFloor > deepest {
+			deepest = template.MaxFloor
+		}
+	}
+	return deepest
 }
 
 func BossTemplateForFloor(rng *RNG, floor int, maxFloors int, endless bool) EnemyTemplate {

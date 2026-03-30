@@ -72,6 +72,12 @@ type mapViewportState struct {
 	CameraY int
 }
 
+type StartupOptions struct {
+	Seed          int64
+	HasLockedSeed bool
+	GodMode       bool
+}
+
 type keyMap struct {
 	Up        key.Binding
 	Down      key.Binding
@@ -143,6 +149,7 @@ type Model struct {
 	outcomeMenuIndex     int
 	lockedSeed           int64
 	hasLockedSeed        bool
+	cliGodMode           bool
 	styles               styles
 	glyphs               glyphSet
 	keys                 keyMap
@@ -158,7 +165,7 @@ type Model struct {
 	mapViewport          mapViewportState
 }
 
-func NewModel(seed int64, hasLockedSeed bool) *Model {
+func NewModel(options StartupOptions) *Model {
 	keys := newKeyMap()
 	helpModel := help.New()
 	helpModel.ShowAll = false
@@ -171,8 +178,9 @@ func NewModel(seed int64, hasLockedSeed bool) *Model {
 	model := &Model{
 		screen:        screenTitle,
 		returnScreen:  screenTitle,
-		lockedSeed:    seed,
-		hasLockedSeed: hasLockedSeed,
+		lockedSeed:    options.Seed,
+		hasLockedSeed: options.HasLockedSeed,
+		cliGodMode:    options.GodMode,
 		styles:        newStyles(),
 		keys:          keys,
 		help:          helpModel,
@@ -699,7 +707,11 @@ func (m *Model) startRun(seed int64) {
 	if seed == 0 {
 		seed = time.Now().UTC().UnixNano()
 	}
-	m.game = game.New(seed, m.profile.Difficulty)
+	m.game = game.New(game.NewGameOptions{
+		Seed:                 seed,
+		PersistentDifficulty: m.profile.Difficulty,
+		GodMode:              m.cliGodMode,
+	})
 	m.screen = screenPlaying
 	m.overlay = overlayNone
 	m.inventoryPane = inventoryPanePack

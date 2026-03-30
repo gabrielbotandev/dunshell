@@ -23,8 +23,8 @@ type Profile struct {
 type RunState struct {
 	Version              string        `json:"version"`
 	SavedAt              string        `json:"saved_at"`
-	Log                  []string      `json:"log"`
 	Seed                 int64         `json:"seed"`
+	GodMode              bool          `json:"god_mode,omitempty"`
 	Mode                 GameMode      `json:"mode"`
 	FloorIndex           int           `json:"floor_index"`
 	MaxFloors            int           `json:"max_floors"`
@@ -137,7 +137,8 @@ func GameFromState(state RunState) *Game {
 	game := &Game{
 		Title:                GameTitle,
 		Seed:                 state.Seed,
-		Log:                  state.Log,
+		GodMode:              state.GodMode,
+		Log:                  make([]string, 0, 128),
 		Mode:                 state.Mode,
 		FloorIndex:           state.FloorIndex,
 		MaxFloors:            state.MaxFloors,
@@ -153,12 +154,10 @@ func GameFromState(state RunState) *Game {
 		nextChestID:          state.NextChestID,
 		nextMerchantID:       state.NextMerchantID,
 	}
-	if game.Log == nil {
-		game.Log = make([]string, 0, 128)
-	}
 	if game.Player == nil {
-		return New(state.Seed, state.PersistentDifficulty)
+		return New(NewGameOptions{Seed: state.Seed, PersistentDifficulty: state.PersistentDifficulty, GodMode: state.GodMode})
 	}
+	game.restoreGodModeState()
 	if game.Floor != nil {
 		ComputeFOV(game.Floor, game.Player.Pos, game.Player.VisionRadius())
 	}
@@ -174,7 +173,7 @@ func (g *Game) RunState() RunState {
 		Version:              SaveVersion,
 		SavedAt:              time.Now().UTC().Format(time.RFC3339),
 		Seed:                 g.Seed,
-		Log:                  g.Log,
+		GodMode:              g.GodMode,
 		Mode:                 g.Mode,
 		FloorIndex:           g.FloorIndex,
 		MaxFloors:            g.MaxFloors,

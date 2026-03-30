@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.2
+
+### Added
+
+- Added a CLI `-god` developer mode that starts runs with endgame testing gear, boosted stats, persisted god-mode saves, and full player invulnerability.
+
+### Changed
+
+- Changed chest prompts so reliquaries no longer reveal their spoils before you spend a matching key.
+- Moved global version and god-mode indicators into the bottom footer and reduced footer controls to `?` help and `q` quit.
+- Stopped persisting transient whisper-log history in run save files.
+
+### Fixed
+
+- Fixed boss gates so they reopen correctly after the boss is defeated.
+- Fixed chest interaction copy in the status sidebar to match the hidden-spoils prompt flow.
+- Fixed endless-mode enemy selection after floor 20 so late-game enemy pools continue spawning instead of falling back to rats.
+
 ## 0.3.1
 
 ### Added

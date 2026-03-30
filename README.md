@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/dunshell-banner.png" alt="Dunshell">
+</p>
+
 # Dunshell
 
 Dunshell is a single-player terminal roguelike built in Go with Bubble Tea, Lip Gloss, and Charm TUI tooling.
@@ -13,6 +17,12 @@ Replay a specific seed from the CLI:
 
 ```bash
 go run . -seed 123456789
+```
+
+Start a developer testing run with endgame gear, boosted stats, persisted god-mode saves, and full player invulnerability:
+
+```bash
+go run . -god
 ```
 
 ## Font And Terminal Notes
@@ -62,25 +72,26 @@ Dunshell stores human-readable JSON saves under the platform config directory:
 - macOS: `~/Library/Application Support/dunshell/`
 - Windows: `%AppData%\dunshell\`
 
-Files created by `0.3.1`:
+Files created by the game:
 
 - `profile.json`: persistent wins, omen-tier difficulty, and settings
 - `run.json`: active run save
 - `run.json.backup`: previous active run snapshot
 
-## Version 0.3.1 Highlights
+God-mode runs keep their `GOD MODE` state inside the saved run, so a saved test run resumes as god mode while a normal save stays normal.
 
-- 20-floor main progression with miniboss floors at `5`, `10`, `15`, and the Ashen Prior on `20`
-- Bigger maps with improved Unicode glyph presentation and runtime glyph settings
-- Dedicated boss rooms with confirmation prompts, lock-in logic, and visible boss health bars
-- Route-choice map rendered as a proper node graph with detail preview
-- Bronze, Silver, and Gold chests with matching keys and reward previews
-- Merchant floors with curated five-slot stock and gold pricing
-- Expanded weapons, armor, charms, consumables, rarities, and three chase unique items
-- Stronger scaling, poison and fire pressure, curatives, and resistance gear
-- Ultra-rare unique enemy drops while the final boss remains the premium reliable source
-- Cleaner theme-friendly panels that respect the terminal background
-- Auto-save / load persistence and seed entry flow from the UI
+Run saves no longer persist the transient in-game message log.
+
+## Game Highlights
+
+- A full 20-floor main descent with miniboss floors on `5`, `10`, and `15`, then the Ashen Prior on floor `20`
+- Dedicated boss rooms with warnings, lock-in gates, boss health tracking, and reward chests that unlock after victory
+- Route-choice maps between floors, letting you steer into merchants, safer recovery paths, loot-heavy routes, cursed runs, or sharper combat
+- Bronze, Silver, and Gold reliquary chests tied to a matching key economy instead of free loot
+- Merchant stops, rarity-based gear, charms, consumables, curatives, and unique chase items for long-run progression
+- Combat pressure built around poison, fire, elite enemies, scaling encounters, and resistance-focused equipment choices
+- Endless mode after victory so a successful run can keep descending into harder post-game floors
+- Auto-save / continue support, replayable seeds, runtime glyph settings, and ASCII fallback for terminals with weaker symbol support
 
 ## Architecture
 
@@ -102,4 +113,4 @@ The detailed game reference now lives in `wiki/`:
 
 ## Build Status
 
-`go test ./...` passes on `0.3.1`.
+`go test ./...` currently passes.
