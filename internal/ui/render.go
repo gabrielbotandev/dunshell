@@ -74,7 +74,6 @@ func (m *Model) viewTitle() string {
 	metaLine := m.styles.Warning.Render(fmt.Sprintf("Omen tier %d  ·  wins %d", m.profile.Difficulty, m.profile.Wins))
 	copy := wrapText("A dark-fantasy terminal roguelike of sealed boss chambers, route-mapped descents, keyed reliquaries, merchants, escalating minibosses, and a crown the abbey still kills to keep.", 72)
 	lines := []string{
-		m.styles.Subtitle.Render("Bubble Tea / Lip Gloss / terminal-native"),
 		"",
 		copy,
 		"",
