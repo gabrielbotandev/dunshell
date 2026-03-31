@@ -15,14 +15,22 @@ Download the archive that matches your platform from [GitHub Releases](https://g
 
 Package manager installs will come later. For now, GitHub Releases is the supported way to grab production binaries.
 
-## Build from source
+## Development
 
-For contributors and local development, the source-build workflow stays the same:
+For contributors and local development, build from source with the existing Go workflow:
 
 ```bash
 go mod tidy
 go run .
 ```
+
+Run the test suite with:
+
+```bash
+go test ./...
+```
+
+For contribution workflow, issue and pull request expectations, and collaboration guidance, see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 Replay a specific seed from the CLI:
 
