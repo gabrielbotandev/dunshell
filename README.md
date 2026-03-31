@@ -6,7 +6,18 @@
 
 Dunshell is a single-player terminal roguelike built in Go with Bubble Tea, Lip Gloss, and Charm TUI tooling.
 
-## Install And Run
+## Play / Install
+
+Download the archive that matches your platform from [GitHub Releases](https://github.com/gabrielbotandev/dunshell/releases/latest), extract it, and run the bundled binary:
+
+- macOS and Linux: `./dunshell`
+- Windows PowerShell: `.\dunshell.exe`
+
+Package manager installs will come later. For now, GitHub Releases is the supported way to grab production binaries.
+
+## Build from source
+
+For contributors and local development, the source-build workflow stays the same:
 
 ```bash
 go mod tidy
@@ -32,6 +43,8 @@ go run . -god
 - If your terminal/font renders symbols poorly, run with pure ASCII fallback:
 
 ```bash
+DUNSHELL_ASCII=1 ./dunshell
+# or, from source:
 DUNSHELL_ASCII=1 go run .
 ```
 
