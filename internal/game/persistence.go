@@ -157,6 +157,7 @@ func GameFromState(state RunState) *Game {
 	if game.Player == nil {
 		return New(NewGameOptions{Seed: state.Seed, PersistentDifficulty: state.PersistentDifficulty, GodMode: state.GodMode})
 	}
+	hydrateProgressionState(game)
 	game.restoreGodModeState()
 	if game.Floor != nil {
 		ComputeFOV(game.Floor, game.Player.Pos, game.Player.VisionRadius())

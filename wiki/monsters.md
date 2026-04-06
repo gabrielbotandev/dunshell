@@ -19,15 +19,24 @@
 
 ## Combat Notes
 
-- Enemies scale upward by floor depth.
+- Normal enemies now have an explicit encounter level that tracks the floor: a rat on floor 1 is level 1, while a rat on floor 2 is level 2.
+- Elites and bosses sit above the floor baseline, making them more rewarding and more dangerous for the XP model.
+- Enemies scale upward by floor depth, and `0.4.0` adds a broader global health bump across the run.
+- Floor 1-2 still avoid some of the extra attack pressure to keep the opening fairer.
+- From the midgame onward, normal enemy attack scaling ramps harder than before.
 - `Ashen Hunt` and `Cursed Procession` can promote enemies into elite versions.
 - Elite enemies gain extra health, attack, defense, XP, and gold.
 - Elites and bosses also deepen status durations and potency.
 - Hunters punish sightlines and chase harder.
 - Casters use ranged burst actions when given space.
-- Cutpurses still threaten gold economy, which matters more in `0.3.1` because merchants are meaningful.
+- Cutpurses still threaten gold economy, which matters more now that merchants are rarer and more strategically valuable.
 
 ## Status Pressure
 
 - `Poison`: damage over time from wisps, drowned rites, and elite escalations.
 - `Fire`: burning damage over time from censer enemies, ash archers, ember seraphs, and late bosses.
+
+## Readability
+
+- Visible enemies now show a floating health bar directly above the sprite.
+- The bar has no HP numbers, but it includes the enemy level beside it for quick threat reading.

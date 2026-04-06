@@ -49,6 +49,7 @@ type Item struct {
 	PoisonCure   bool
 	FireCure     bool
 	FocusTurns   int
+	FocusFloors  int
 	FocusBonus   int
 	EmberDamage  int
 	PoisonResist int
@@ -86,8 +87,12 @@ func (i Item) DetailLine() string {
 		if i.FireCure {
 			parts = append(parts, "douses fire")
 		}
-		if i.FocusTurns > 0 {
+		if i.FocusFloors > 0 {
 			parts = append(parts, "focus +"+itoa(i.FocusBonus))
+			parts = append(parts, itoa(i.FocusFloors)+"f")
+		} else if i.FocusTurns > 0 {
+			parts = append(parts, "focus +"+itoa(i.FocusBonus))
+			parts = append(parts, itoa(i.FocusTurns)+"t")
 		}
 		if i.EmberDamage > 0 {
 			parts = append(parts, "ember "+itoa(i.EmberDamage))
@@ -149,7 +154,7 @@ var itemCatalog = map[string]Item{
 	"healing_salve": {
 		ID: "healing_salve", Name: "Healing Salve", Kind: ItemKindConsumable, Rarity: RarityCommon,
 		Glyph: '✚', ASCII: '!', Tint: RarityCommon.Tint(), Description: "Waxed cloth packed with bitter resin.",
-		Heal: 10, Price: 18, MinFloor: 1, MaxFloor: 99, Weight: 18,
+		Heal: 12, Price: 18, MinFloor: 1, MaxFloor: 99, Weight: 18,
 	},
 	"pilgrim_bandage": {
 		ID: "pilgrim_bandage", Name: "Pilgrim Bandage", Kind: ItemKindConsumable, Rarity: RarityCommon,
@@ -168,8 +173,8 @@ var itemCatalog = map[string]Item{
 	},
 	"sunbrew_tonic": {
 		ID: "sunbrew_tonic", Name: "Sunbrew Tonic", Kind: ItemKindConsumable, Rarity: RarityUncommon,
-		Glyph: '✚', ASCII: '!', Tint: RarityUncommon.Tint(), Description: "Distilled emberroot that sharpens the next exchange.",
-		FocusTurns: 4, FocusBonus: 2, Price: 40, MinFloor: 3, MaxFloor: 99, Weight: 10,
+		Glyph: '✚', ASCII: '!', Tint: RarityUncommon.Tint(), Description: "Distilled emberroot that sharpens a whole descent.",
+		FocusFloors: 1, FocusBonus: 2, Price: 46, MinFloor: 3, MaxFloor: 99, Weight: 10,
 	},
 	"ember_phial": {
 		ID: "ember_phial", Name: "Ember Phial", Kind: ItemKindConsumable, Rarity: RarityRare,
@@ -189,112 +194,162 @@ var itemCatalog = map[string]Item{
 	"hearth_knife": {
 		ID: "hearth_knife", Name: "Hearth Knife", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityCommon,
 		Glyph: '†', ASCII: ')', Tint: RarityCommon.Tint(), Description: "A pilgrim's short blade, honest and plain.",
-		AttackBonus: 1, Price: 24, MinFloor: 1, MaxFloor: 6, Weight: 12,
+		AttackBonus: 2, Price: 24, MinFloor: 1, MaxFloor: 6, Weight: 12,
+	},
+	"pilgrim_hatchet": {
+		ID: "pilgrim_hatchet", Name: "Pilgrim Hatchet", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityCommon,
+		Glyph: '†', ASCII: ')', Tint: RarityCommon.Tint(), Description: "A field hatchet balanced for bone, rope, and bad vows.",
+		AttackBonus: 2, MaxHPBonus: 1, Price: 28, MinFloor: 1, MaxFloor: 5, Weight: 11,
 	},
 	"gravehook": {
 		ID: "gravehook", Name: "Gravehook", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityCommon,
 		Glyph: '†', ASCII: ')', Tint: RarityCommon.Tint(), Description: "Curved steel dragged from a robber's satchel.",
-		AttackBonus: 2, Price: 34, MinFloor: 2, MaxFloor: 9, Weight: 11,
+		AttackBonus: 3, Price: 34, MinFloor: 2, MaxFloor: 9, Weight: 11,
+	},
+	"tidecleaver": {
+		ID: "tidecleaver", Name: "Tidecleaver", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityCommon,
+		Glyph: '†', ASCII: ')', Tint: RarityCommon.Tint(), Description: "A salt-dark blade that bites and braces in the same motion.",
+		AttackBonus: 3, DefenseBonus: 1, Price: 42, MinFloor: 3, MaxFloor: 8, Weight: 10,
 	},
 	"chapel_pike": {
 		ID: "chapel_pike", Name: "Chapel Pike", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityUncommon,
 		Glyph: '†', ASCII: ')', Tint: RarityUncommon.Tint(), Description: "Ceremonial reach reforged for narrow halls.",
-		AttackBonus: 3, MaxHPBonus: 2, Price: 52, MinFloor: 4, MaxFloor: 12, Weight: 9,
+		AttackBonus: 4, MaxHPBonus: 2, Price: 52, MinFloor: 4, MaxFloor: 12, Weight: 9,
+	},
+	"censer_mace": {
+		ID: "censer_mace", Name: "Censer Mace", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityUncommon,
+		Glyph: '†', ASCII: ')', Tint: RarityUncommon.Tint(), Description: "A brass-headed breaker that keeps a little heat after the swing.",
+		AttackBonus: 4, FireResist: 1, Price: 66, MinFloor: 5, MaxFloor: 11, Weight: 8,
 	},
 	"lantern_falx": {
 		ID: "lantern_falx", Name: "Lantern Falx", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityUncommon,
 		Glyph: '†', ASCII: ')', Tint: RarityUncommon.Tint(), Description: "A crescent blade keen enough to work by candlelight.",
-		AttackBonus: 3, SightBonus: 1, Price: 58, MinFloor: 6, MaxFloor: 14, Weight: 8,
+		AttackBonus: 4, SightBonus: 1, Price: 58, MinFloor: 6, MaxFloor: 14, Weight: 8,
+	},
+	"scribe_spear": {
+		ID: "scribe_spear", Name: "Scribe Spear", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityRare,
+		Glyph: '†', ASCII: ')', Tint: RarityRare.Tint(), Description: "A ledger-guard polearm sharpened for anyone who reaches too fast.",
+		AttackBonus: 5, DefenseBonus: 1, SightBonus: 1, Price: 84, MinFloor: 8, MaxFloor: 15, Weight: 7,
 	},
 	"ossuary_blade": {
 		ID: "ossuary_blade", Name: "Ossuary Blade", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityRare,
 		Glyph: '†', ASCII: ')', Tint: RarityRare.Tint(), Description: "Bone-dusted steel with a brutal backswing.",
-		AttackBonus: 5, DefenseBonus: 1, Price: 88, MinFloor: 8, MaxFloor: 18, Weight: 7,
+		AttackBonus: 6, DefenseBonus: 1, Price: 88, MinFloor: 8, MaxFloor: 18, Weight: 7,
 	},
 	"saintbreaker_maul": {
 		ID: "saintbreaker_maul", Name: "Saintbreaker Maul", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityRare,
 		Glyph: '†', ASCII: ')', Tint: RarityRare.Tint(), Description: "A reliquary hammer too heavy for processions.",
-		AttackBonus: 6, MaxHPBonus: 4, Price: 108, MinFloor: 11, MaxFloor: 20, Weight: 6,
+		AttackBonus: 7, MaxHPBonus: 4, Price: 108, MinFloor: 11, MaxFloor: 20, Weight: 6,
 	},
 	"sunsteel_blade": {
 		ID: "sunsteel_blade", Name: "Sunsteel Blade", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityLegendary,
 		Glyph: '†', ASCII: ')', Tint: RarityLegendary.Tint(), Description: "Rare steel that glows warm in soaked darkness.",
-		AttackBonus: 7, SightBonus: 2, Price: 144, MinFloor: 14, MaxFloor: 99, Weight: 3,
+		AttackBonus: 8, SightBonus: 2, Price: 144, MinFloor: 14, MaxFloor: 99, Weight: 3,
 	},
 	"thorn_of_the_prior": {
 		ID: "thorn_of_the_prior", Name: "Thorn of the Prior", Kind: ItemKindEquipment, Slot: SlotWeapon, Rarity: RarityUnique,
 		Glyph: '✠', ASCII: ')', Tint: RarityUnique.Tint(), Description: "The ashen crozier split into a killing edge.",
-		AttackBonus: 9, MaxHPBonus: 4, SightBonus: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
+		AttackBonus: 10, MaxHPBonus: 4, SightBonus: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
 	},
 	"patched_coat": {
 		ID: "patched_coat", Name: "Patched Coat", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityCommon,
 		Glyph: '⛨', ASCII: '[', Tint: RarityCommon.Tint(), Description: "Layered cloth and leather, enough to turn a rat's bite.",
-		DefenseBonus: 1, Price: 22, MinFloor: 1, MaxFloor: 6, Weight: 12,
+		DefenseBonus: 2, Price: 22, MinFloor: 1, MaxFloor: 6, Weight: 12,
+	},
+	"salt_stitched_vest": {
+		ID: "salt_stitched_vest", Name: "Salt-Stitched Vest", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityCommon,
+		Glyph: '⛨', ASCII: '[', Tint: RarityCommon.Tint(), Description: "Drycloth packed with salt knots where the first bite usually lands.",
+		DefenseBonus: 2, MaxHPBonus: 2, Price: 30, MinFloor: 1, MaxFloor: 5, Weight: 11,
 	},
 	"pilgrim_mail": {
 		ID: "pilgrim_mail", Name: "Pilgrim Mail", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityCommon,
 		Glyph: '⛨', ASCII: '[', Tint: RarityCommon.Tint(), Description: "Prayer tags still knot the collar closed.",
-		DefenseBonus: 2, MaxHPBonus: 3, Price: 40, MinFloor: 3, MaxFloor: 10, Weight: 10,
+		DefenseBonus: 3, MaxHPBonus: 3, Price: 40, MinFloor: 3, MaxFloor: 10, Weight: 10,
+	},
+	"penitent_leathers": {
+		ID: "penitent_leathers", Name: "Penitent Leathers", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityCommon,
+		Glyph: '⛨', ASCII: '[', Tint: RarityCommon.Tint(), Description: "Flex-light hides cut for ducking chapel swings and bad corridors.",
+		DefenseBonus: 3, SightBonus: 1, Price: 46, MinFloor: 4, MaxFloor: 9, Weight: 9,
 	},
 	"gravewax_hauberk": {
 		ID: "gravewax_hauberk", Name: "Gravewax Hauberk", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityUncommon,
 		Glyph: '⛨', ASCII: '[', Tint: RarityUncommon.Tint(), Description: "Wax-black rings that drink the first shock of a blow.",
-		DefenseBonus: 3, MaxHPBonus: 4, PoisonResist: 1, Price: 60, MinFloor: 6, MaxFloor: 14, Weight: 8,
+		DefenseBonus: 4, MaxHPBonus: 4, PoisonResist: 1, Price: 60, MinFloor: 6, MaxFloor: 14, Weight: 8,
+	},
+	"censer_guard": {
+		ID: "censer_guard", Name: "Censer Guard", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityUncommon,
+		Glyph: '⛨', ASCII: '[', Tint: RarityUncommon.Tint(), Description: "A shrine watch coat lined to shrug off sparks and close blows.",
+		DefenseBonus: 4, MaxHPBonus: 3, FireResist: 1, Price: 72, MinFloor: 7, MaxFloor: 13, Weight: 8,
 	},
 	"floodplate_cuirass": {
 		ID: "floodplate_cuirass", Name: "Floodplate Cuirass", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityRare,
 		Glyph: '⛨', ASCII: '[', Tint: RarityRare.Tint(), Description: "River-worn plate that still answers to the strap.",
-		DefenseBonus: 4, MaxHPBonus: 6, Price: 92, MinFloor: 9, MaxFloor: 18, Weight: 7,
+		DefenseBonus: 5, MaxHPBonus: 6, Price: 92, MinFloor: 9, MaxFloor: 18, Weight: 7,
 	},
 	"warden_harness": {
 		ID: "warden_harness", Name: "Warden Harness", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityRare,
 		Glyph: '⛨', ASCII: '[', Tint: RarityRare.Tint(), Description: "A shrine guard's rig threaded with watch-lamps.",
-		DefenseBonus: 4, MaxHPBonus: 4, SightBonus: 1, Price: 100, MinFloor: 11, MaxFloor: 20, Weight: 6,
+		DefenseBonus: 5, MaxHPBonus: 4, SightBonus: 1, Price: 100, MinFloor: 11, MaxFloor: 20, Weight: 6,
 	},
 	"cathedral_plate": {
 		ID: "cathedral_plate", Name: "Cathedral Plate", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityLegendary,
 		Glyph: '⛨', ASCII: '[', Tint: RarityLegendary.Tint(), Description: "Sacristy armor too heavy for processions and perfect for war.",
-		DefenseBonus: 5, MaxHPBonus: 8, Price: 138, MinFloor: 14, MaxFloor: 99, Weight: 3,
+		DefenseBonus: 6, MaxHPBonus: 8, Price: 138, MinFloor: 14, MaxFloor: 99, Weight: 3,
 	},
 	"ashen_vestments": {
 		ID: "ashen_vestments", Name: "Ashen Vestments", Kind: ItemKindEquipment, Slot: SlotArmor, Rarity: RarityUnique,
 		Glyph: '✠', ASCII: '[', Tint: RarityUnique.Tint(), Description: "The prior's funerary layers, still warm with condemned prayer.",
-		DefenseBonus: 6, MaxHPBonus: 12, SightBonus: 2, FireResist: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
+		DefenseBonus: 7, MaxHPBonus: 12, SightBonus: 2, FireResist: 2, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
 	},
 	"lantern_charm": {
 		ID: "lantern_charm", Name: "Lantern Charm", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityCommon.Tint(), Description: "A pocket sigil that coaxes light from old oil.",
 		SightBonus: 1, Price: 20, MinFloor: 1, MaxFloor: 8, Weight: 12,
 	},
+	"pilgrim_censer": {
+		ID: "pilgrim_censer", Name: "Pilgrim Censer", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
+		Glyph: '◌', ASCII: '=', Tint: RarityCommon.Tint(), Description: "A soot-black censer bead that steadies the hand near flame.",
+		AttackBonus: 1, FireResist: 1, Price: 24, MinFloor: 2, MaxFloor: 6, Weight: 11,
+	},
 	"warding_bead": {
 		ID: "warding_bead", Name: "Warding Bead", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityCommon.Tint(), Description: "A cool bead that stills the hand before impact.",
-		DefenseBonus: 1, FireResist: 1, Price: 20, MinFloor: 1, MaxFloor: 9, Weight: 11,
+		DefenseBonus: 2, FireResist: 1, Price: 20, MinFloor: 1, MaxFloor: 9, Weight: 11,
+	},
+	"tide_token": {
+		ID: "tide_token", Name: "Tide Token", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityCommon,
+		Glyph: '◌', ASCII: '=', Tint: RarityCommon.Tint(), Description: "A flood-smoothed token that takes some of the sting out of filth and fear.",
+		DefenseBonus: 1, MaxHPBonus: 3, PoisonResist: 1, Price: 38, MinFloor: 4, MaxFloor: 9, Weight: 10,
 	},
 	"vow_sigil": {
 		ID: "vow_sigil", Name: "Vow Sigil", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUncommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityUncommon.Tint(), Description: "An oath-brand that rewards bold steps.",
-		AttackBonus: 1, MaxHPBonus: 2, Price: 36, MinFloor: 3, MaxFloor: 12, Weight: 9,
+		AttackBonus: 2, MaxHPBonus: 2, Price: 36, MinFloor: 3, MaxFloor: 12, Weight: 9,
+	},
+	"ashmarked_talisman": {
+		ID: "ashmarked_talisman", Name: "Ashmarked Talisman", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUncommon,
+		Glyph: '◌', ASCII: '=', Tint: RarityUncommon.Tint(), Description: "A branded shard that rewards pressure with steadier footing.",
+		AttackBonus: 2, DefenseBonus: 1, Price: 62, MinFloor: 7, MaxFloor: 13, Weight: 8,
 	},
 	"salt_reliquary": {
 		ID: "salt_reliquary", Name: "Salt Reliquary", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUncommon,
 		Glyph: '◌', ASCII: '=', Tint: RarityUncommon.Tint(), Description: "A dry charm that keeps rot and fear at arm's reach.",
-		DefenseBonus: 2, SightBonus: 1, PoisonResist: 1, Price: 52, MinFloor: 6, MaxFloor: 14, Weight: 8,
+		DefenseBonus: 2, SightBonus: 2, PoisonResist: 1, Price: 52, MinFloor: 6, MaxFloor: 14, Weight: 8,
 	},
 	"blackglass_eye": {
 		ID: "blackglass_eye", Name: "Blackglass Eye", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityRare,
 		Glyph: '◌', ASCII: '=', Tint: RarityRare.Tint(), Description: "A polished eye that catches hostile movement before the foot does.",
-		AttackBonus: 2, SightBonus: 2, Price: 82, MinFloor: 9, MaxFloor: 18, Weight: 6,
+		AttackBonus: 3, SightBonus: 2, Price: 82, MinFloor: 9, MaxFloor: 18, Weight: 6,
 	},
 	"choir_knot": {
 		ID: "choir_knot", Name: "Choir Knot", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityLegendary,
 		Glyph: '◌', ASCII: '=', Tint: RarityLegendary.Tint(), Description: "A severed braid bound around a prayer bell.",
-		AttackBonus: 2, DefenseBonus: 2, MaxHPBonus: 4, PoisonResist: 1, FireResist: 1, Price: 124, MinFloor: 14, MaxFloor: 99, Weight: 3,
+		AttackBonus: 3, DefenseBonus: 2, MaxHPBonus: 4, PoisonResist: 1, FireResist: 1, Price: 124, MinFloor: 14, MaxFloor: 99, Weight: 3,
 	},
 	"crownshard_rosary": {
 		ID: "crownshard_rosary", Name: "Crownshard Rosary", Kind: ItemKindEquipment, Slot: SlotCharm, Rarity: RarityUnique,
 		Glyph: '✠', ASCII: '=', Tint: RarityUnique.Tint(), Description: "A string of splinters chipped from the crown's first casing.",
-		AttackBonus: 3, DefenseBonus: 3, MaxHPBonus: 6, SightBonus: 2, PoisonResist: 1, FireResist: 1, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
+		AttackBonus: 4, DefenseBonus: 4, MaxHPBonus: 6, SightBonus: 2, PoisonResist: 1, FireResist: 1, Price: 0, MinFloor: 20, MaxFloor: 99, Weight: 1,
 	},
 	"bronze_key": {
 		ID: "bronze_key", Name: "Bronze Key", Kind: ItemKindKey, Rarity: RarityCommon,
@@ -331,9 +386,13 @@ var consumableIDs = []string{
 
 var weaponIDs = []string{
 	"hearth_knife",
+	"pilgrim_hatchet",
 	"gravehook",
+	"tidecleaver",
 	"chapel_pike",
+	"censer_mace",
 	"lantern_falx",
+	"scribe_spear",
 	"ossuary_blade",
 	"saintbreaker_maul",
 	"sunsteel_blade",
@@ -341,8 +400,11 @@ var weaponIDs = []string{
 
 var armorIDs = []string{
 	"patched_coat",
+	"salt_stitched_vest",
 	"pilgrim_mail",
+	"penitent_leathers",
 	"gravewax_hauberk",
+	"censer_guard",
 	"floodplate_cuirass",
 	"warden_harness",
 	"cathedral_plate",
@@ -350,8 +412,11 @@ var armorIDs = []string{
 
 var charmIDs = []string{
 	"lantern_charm",
+	"pilgrim_censer",
 	"warding_bead",
+	"tide_token",
 	"vow_sigil",
+	"ashmarked_talisman",
 	"salt_reliquary",
 	"blackglass_eye",
 	"choir_knot",
@@ -379,7 +444,9 @@ func StarterInventory() []Item {
 	return []Item{
 		ItemByID("healing_salve"),
 		ItemByID("healing_salve"),
-		ItemByID("sunbrew_tonic"),
+		ItemByID("healing_salve"),
+		ItemByID("healing_salve"),
+		ItemByID("healing_salve"),
 	}
 }
 
@@ -526,9 +593,9 @@ func GenerateChestRewards(rng *RNG, tier KeyTier, floor int, modifier FloorModif
 func GenerateMerchantOffers(rng *RNG, floor int) []MerchantOffer {
 	offers := []MerchantOffer{
 		{Item: pickMerchantHealingItem(rng, floor)},
-		{Item: randomEquipmentForSlot(rng, floor+1, SlotWeapon, 1)},
-		{Item: randomEquipmentForSlot(rng, floor+1, SlotArmor, 1)},
-		{Item: randomEquipmentForSlot(rng, floor+1, SlotCharm, 1)},
+		{Item: merchantEquipmentItem(rng, floor, SlotWeapon)},
+		{Item: merchantEquipmentItem(rng, floor, SlotArmor)},
+		{Item: merchantEquipmentItem(rng, floor, SlotCharm)},
 	}
 
 	switch rng.Intn(4) {
@@ -537,7 +604,15 @@ func GenerateMerchantOffers(rng *RNG, floor int) []MerchantOffer {
 	case 1:
 		offers = append(offers, MerchantOffer{Item: KeyItem(merchantKeyTier(floor))})
 	default:
-		offers = append(offers, MerchantOffer{Item: randomEquipmentForSlot(rng, floor+1, randomEquipmentSlot(rng), 2)})
+		offers = append(offers, MerchantOffer{Item: merchantFlexibleOffer(rng, floor)})
+	}
+
+	if jackpotIndex := merchantJackpotOfferIndex(rng, offers); jackpotIndex >= 0 {
+		slot := offers[jackpotIndex].Item.Slot
+		if slot == SlotNone {
+			slot = randomEquipmentSlot(rng)
+		}
+		offers[jackpotIndex].Item = merchantPremiumEquipmentItem(rng, floor, slot)
 	}
 
 	seen := map[string]bool{}
@@ -695,6 +770,34 @@ func merchantKeyTier(floor int) KeyTier {
 	}
 }
 
+func merchantEquipmentItem(rng *RNG, floor int, slot EquipmentSlot) Item {
+	return randomEquipmentForSlot(rng, floor+2, slot, 2)
+}
+
+func merchantPremiumEquipmentItem(rng *RNG, floor int, slot EquipmentSlot) Item {
+	return randomEquipmentForSlot(rng, floor+5, slot, 4)
+}
+
+func merchantFlexibleOffer(rng *RNG, floor int) Item {
+	return randomEquipmentForSlot(rng, floor+2, randomEquipmentSlot(rng), 3)
+}
+
+func merchantJackpotOfferIndex(rng *RNG, offers []MerchantOffer) int {
+	if rng.Float64() >= 0.02 {
+		return -1
+	}
+	indices := make([]int, 0, len(offers))
+	for index, offer := range offers {
+		if offer.Item.Kind == ItemKindEquipment {
+			indices = append(indices, index)
+		}
+	}
+	if len(indices) == 0 {
+		return -1
+	}
+	return indices[rng.Intn(len(indices))]
+}
+
 func pickMerchantHealingItem(rng *RNG, floor int) Item {
 	pool := []Item{ItemByID("healing_salve"), ItemByID("pilgrim_bandage")}
 	if floor >= 10 {
@@ -719,16 +822,19 @@ func rerollMerchantItem(rng *RNG, floor int, slotIndex int) Item {
 	case 0:
 		return pickMerchantHealingItem(rng, floor)
 	case 1:
-		return randomEquipmentForSlot(rng, floor+1, SlotWeapon, 1)
+		return merchantEquipmentItem(rng, floor, SlotWeapon)
 	case 2:
-		return randomEquipmentForSlot(rng, floor+1, SlotArmor, 1)
+		return merchantEquipmentItem(rng, floor, SlotArmor)
 	case 3:
-		return randomEquipmentForSlot(rng, floor+1, SlotCharm, 1)
+		return merchantEquipmentItem(rng, floor, SlotCharm)
 	default:
 		if rng.Intn(2) == 0 {
 			return pickMerchantUtilityItem(rng, floor)
 		}
-		return KeyItem(merchantKeyTier(floor))
+		if rng.Intn(2) == 0 {
+			return KeyItem(merchantKeyTier(floor))
+		}
+		return merchantFlexibleOffer(rng, floor)
 	}
 }
 

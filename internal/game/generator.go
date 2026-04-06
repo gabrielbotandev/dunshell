@@ -343,7 +343,7 @@ func populateChests(rng *RNG, floor *Floor, occupied map[Position]bool, level in
 }
 
 func populateMerchants(rng *RNG, floor *Floor, occupied map[Position]bool, level int, modifier FloorModifier, nextMerchantID *int, bossRoomIndex int) {
-	spawnMerchant := modifier.Merchant || (level > 3 && rng.Float64() < 0.08)
+	spawnMerchant := modifier.Merchant || (level > 3 && rng.Float64() < 0.04)
 	if !spawnMerchant {
 		return
 	}
@@ -389,7 +389,7 @@ func populateKeys(rng *RNG, floor *Floor, occupied map[Position]bool, level int,
 }
 
 func populateEnemies(rng *RNG, floor *Floor, occupied map[Position]bool, level int, persistentDifficulty int, modifier FloorModifier, nextEnemyID *int, bossRoomIndex int) {
-	enemyCount := 9 + level + rng.Intn(4) + modifier.EnemyBonus
+	enemyCount := 9 + level + rng.Intn(4) + modifier.EnemyBonus - earlyFloorEnemyCountRelief(level)
 	if modifier.Cursed {
 		enemyCount += 2
 	}
@@ -406,6 +406,7 @@ func populateEnemies(rng *RNG, floor *Floor, occupied map[Position]bool, level i
 		enemy := &Enemy{
 			ID:       *nextEnemyID,
 			Template: template,
+			Level:    enemyLevelForEncounter(level, template, elite),
 			Pos:      pos,
 			Home:     pos,
 			HomeRoom: roomIndex,
@@ -416,6 +417,17 @@ func populateEnemies(rng *RNG, floor *Floor, occupied map[Position]bool, level i
 		*nextEnemyID++
 		floor.Enemies = append(floor.Enemies, enemy)
 		occupied[pos] = true
+	}
+}
+
+func earlyFloorEnemyCountRelief(level int) int {
+	switch level {
+	case 1:
+		return 2
+	case 2:
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -432,6 +444,7 @@ func populateBoss(rng *RNG, floor *Floor, occupied map[Position]bool, level int,
 	boss := &Enemy{
 		ID:       *nextEnemyID,
 		Template: template,
+		Level:    enemyLevelForEncounter(level, template, false),
 		Pos:      bossPos,
 		Home:     bossPos,
 		HomeRoom: floor.Boss.RoomIndex,

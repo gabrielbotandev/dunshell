@@ -2,7 +2,8 @@
 
 ## Merchant Rules
 
-- Merchants appear from the `Broker's Lantern` route and can also appear rarely on normal floors.
+- `Broker's Lantern` is now a rarer route outcome, appearing on roughly `25%` of route maps.
+- Merchants can still appear outside that route, but incidental floor spawns are rarer than before.
 - Each merchant carries exactly `5` offers.
 - Every merchant always sells:
   - one healing consumable
@@ -10,6 +11,8 @@
   - one armor piece
   - one charm
   - one extra slot that can be utility, another piece of gear, or a key
+- Merchant gear now pulls from a slightly stronger floor-ahead pool than ordinary loot.
+- A merchant has a very low chance to roll one unusually strong premium equipment offer.
 
 ## Economy Shape
 
@@ -33,6 +36,6 @@
 
 ## Practical Use
 
-- Early merchants stabilize a weak build.
-- Midrun merchants often bridge a failed loot streak.
-- Late merchants can sell Legendary-tier upgrades that matter against floors 15-20.
+- Early merchants are no longer expected every run, so they function more like a spike of relief or acceleration.
+- Midrun merchants still bridge bad loot streaks, but they are more special and easier to plan around when they do appear.
+- Late merchants can occasionally surface standout gear, but most of the run's power should still come from floor loot, elites, and boss rewards.

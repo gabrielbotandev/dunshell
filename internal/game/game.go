@@ -4,7 +4,7 @@ import "strings"
 
 const (
 	GameTitle   = "Dunshell"
-	GameVersion = "0.3.2"
+	GameVersion = "0.4.0"
 )
 
 type Summary struct {
@@ -318,6 +318,7 @@ func (g *Game) DescendWithRoute(index int) bool {
 	g.Floor = GenerateFloor(g.rng, g.FloorIndex, g.MaxFloors, g.PersistentDifficulty, choice.Modifier, g.Endless, &g.nextEnemyID, &g.nextChestID, &g.nextMerchantID)
 	g.Player.Pos = g.Floor.Entrance
 	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+4)
+	g.tickPlayerFloorStatuses()
 	g.applyFloorArrival(choice.Modifier)
 	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
 	g.AddLog("You descend by way of " + strings.ToLower(choice.Title) + ".")
@@ -342,6 +343,7 @@ func (g *Game) ContinueEndless() bool {
 	g.Player.HP = min(g.Player.MaxHP(), g.Player.HP+max(6, g.Player.MaxHP()/5))
 	g.PendingRoutes = nil
 	g.AddLog("You keep the crown and go deeper. The abbey opens a throat beneath the sanctum.")
+	g.tickPlayerFloorStatuses()
 	g.applyFloorArrival(choice.Modifier)
 	ComputeFOV(g.Floor, g.Player.Pos, g.Player.VisionRadius())
 	g.AddLog(g.floorIntro())
@@ -524,9 +526,17 @@ func (g *Game) UseItem(index int) bool {
 			g.AddLog("You recover " + itoa(healed) + " HP with " + item.Name + ".")
 		}
 		consumed = true
-	case item.FocusTurns > 0:
-		g.Player.ApplyStatus(StatusFocus, item.FocusTurns, item.FocusBonus)
-		g.AddLog("Your blood runs hot. The next blows will land harder.")
+	case item.FocusFloors > 0 || item.FocusTurns > 0:
+		floors := item.FocusFloors
+		if floors <= 0 {
+			floors = 1
+		}
+		g.Player.ApplyStatusByFloor(StatusFocus, floors, item.FocusBonus)
+		if floors == 1 {
+			g.AddLog("Your blood runs hot. The tonic's edge will hold for this floor.")
+		} else {
+			g.AddLog("Your blood runs hot. The tonic's edge will hold for the next " + itoa(floors) + " floors.")
+		}
 		consumed = true
 	case item.EmberDamage > 0:
 		target := g.nearestVisibleEnemy()
@@ -741,7 +751,7 @@ func (g *Game) killEnemy(enemy *Enemy, deathMessage string) {
 		g.Floor.Items = append(g.Floor.Items, GroundItem{Pos: enemy.Pos, Item: key, RoomIndex: g.Floor.RoomIndexAt(enemy.Pos)})
 		g.AddLog(enemy.DisplayName() + " spills a " + strings.ToLower(key.Name) + ".")
 	}
-	if g.Player.GainXP(enemy.Template.XPReward) {
+	if g.Player.GainXP(enemyXPProgress(enemy, g.Player, g.FloorIndex)) {
 		g.AddLog("You rise to level " + itoa(g.Player.Level) + ".")
 	}
 
@@ -975,8 +985,10 @@ func (g *Game) tickPlayerStatuses() {
 			g.Player.HP -= max(1, status.Potency)
 			g.AddLog("Fire eats you for " + itoa(max(1, status.Potency)) + ".")
 		}
-		status.Turns--
 		if status.Turns > 0 {
+			status.Turns--
+		}
+		if status.Turns > 0 || status.Floors > 0 {
 			nextStatuses = append(nextStatuses, status)
 		} else {
 			switch status.Kind {
@@ -991,6 +1003,30 @@ func (g *Game) tickPlayerStatuses() {
 	}
 	g.Player.Statuses = nextStatuses
 	g.Player.ClampHP()
+}
+
+func (g *Game) tickPlayerFloorStatuses() {
+	nextStatuses := make([]StatusEffect, 0, len(g.Player.Statuses))
+	for _, status := range g.Player.Statuses {
+		if status.Floors <= 0 {
+			nextStatuses = append(nextStatuses, status)
+			continue
+		}
+
+		status.Floors--
+		if status.Floors > 0 {
+			nextStatuses = append(nextStatuses, status)
+			continue
+		}
+
+		switch status.Kind {
+		case StatusFocus:
+			g.AddLog("The tonic's edge fades as a new floor begins.")
+		default:
+			g.AddLog("The " + status.Kind.Name() + " finally falls away.")
+		}
+	}
+	g.Player.Statuses = nextStatuses
 }
 
 func (g *Game) applyPlayerDamage(amount int) (int, bool) {

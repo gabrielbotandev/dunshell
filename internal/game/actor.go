@@ -13,11 +13,12 @@ const StatusScorched = StatusFire
 type StatusEffect struct {
 	Kind    StatusKind
 	Turns   int
+	Floors  int
 	Potency int
 }
 
 func (s StatusEffect) Label() string {
-	suffix := itoa(s.Turns) + "t"
+	suffix := s.durationLabel()
 	switch s.Kind {
 	case StatusPoison:
 		return "Poison " + suffix + " x" + itoa(max(1, s.Potency))
@@ -31,20 +32,35 @@ func (s StatusEffect) Label() string {
 }
 
 func (s StatusEffect) ShortLabel() string {
+	suffix := s.shortDurationLabel()
 	potency := ""
 	if s.Potency > 1 {
 		potency = "x" + itoa(s.Potency)
 	}
 	switch s.Kind {
 	case StatusPoison:
-		return "VENOM " + itoa(s.Turns) + potency
+		return "VENOM " + suffix + potency
 	case StatusFocus:
-		return "FOCUS " + itoa(s.Turns)
+		return "FOCUS " + suffix
 	case StatusFire:
-		return "FIRE " + itoa(s.Turns) + potency
+		return "FIRE " + suffix + potency
 	default:
 		return "STATE"
 	}
+}
+
+func (s StatusEffect) durationLabel() string {
+	if s.Floors > 0 {
+		return itoa(max(1, s.Floors)) + "f"
+	}
+	return itoa(max(1, s.Turns)) + "t"
+}
+
+func (s StatusEffect) shortDurationLabel() string {
+	if s.Floors > 0 {
+		return itoa(max(1, s.Floors)) + "F"
+	}
+	return itoa(max(1, s.Turns)) + "T"
 }
 
 func (s StatusEffect) Harmful() bool {
@@ -198,12 +214,28 @@ func (p *Player) ApplyStatus(kind StatusKind, turns int, potency int) {
 	for index := range p.Statuses {
 		if p.Statuses[index].Kind == kind {
 			p.Statuses[index].Turns = max(p.Statuses[index].Turns, turns)
+			if turns > 0 {
+				p.Statuses[index].Floors = 0
+			}
 			p.Statuses[index].Potency = max(p.Statuses[index].Potency, potency)
 			return
 		}
 	}
 
 	p.Statuses = append(p.Statuses, StatusEffect{Kind: kind, Turns: turns, Potency: potency})
+}
+
+func (p *Player) ApplyStatusByFloor(kind StatusKind, floors int, potency int) {
+	for index := range p.Statuses {
+		if p.Statuses[index].Kind == kind {
+			p.Statuses[index].Turns = 0
+			p.Statuses[index].Floors = max(p.Statuses[index].Floors, floors)
+			p.Statuses[index].Potency = max(p.Statuses[index].Potency, potency)
+			return
+		}
+	}
+
+	p.Statuses = append(p.Statuses, StatusEffect{Kind: kind, Floors: floors, Potency: potency})
 }
 
 func (p *Player) StatusResistance(kind StatusKind) int {
@@ -244,9 +276,13 @@ func (p *Player) ClampHP() {
 }
 
 func (p *Player) GainXP(amount int) bool {
+	if amount <= 0 {
+		return false
+	}
 	p.XP += amount
 	leveled := false
 	for p.XP >= p.NextLevelXP() {
+		p.XP -= p.NextLevelXP()
 		p.Level++
 		p.BaseMaxHP += 5
 		p.BaseAttack += 2
@@ -263,7 +299,7 @@ func (p *Player) GainXP(amount int) bool {
 }
 
 func (p *Player) NextLevelXP() int {
-	return 16 + p.Level*16 + (p.Level-1)*(p.Level-1)
+	return experiencePerLevel
 }
 
 func (p *Player) equippedItems() []Item {
@@ -283,6 +319,7 @@ func (p *Player) equippedItems() []Item {
 type Enemy struct {
 	ID              int
 	Template        EnemyTemplate
+	Level           int
 	Pos             Position
 	Home            Position
 	HomeRoom        int

@@ -230,10 +230,9 @@ func FloorIntro(level int) string {
 
 func GenerateRouteChoices(rng *RNG, nextFloor int, maxFloors int, endless bool) []RouteChoice {
 	choices := make([]RouteChoice, 0, 3)
-	indices := rng.Perm(len(routePool))
+	modifiers := routeChoiceModifiers(rng, shouldOfferMerchantRoute(rng))
 	bossFloor := isBossFloor(nextFloor, maxFloors, endless)
-	for _, index := range indices[:3] {
-		modifier := routePool[index]
+	for _, modifier := range modifiers {
 		reward := modifier.Summary
 		risk := "Steady"
 		if modifier.Cursed {
@@ -255,6 +254,37 @@ func GenerateRouteChoices(rng *RNG, nextFloor int, maxFloors int, endless bool) 
 		})
 	}
 	return choices
+}
+
+func shouldOfferMerchantRoute(rng *RNG) bool {
+	return rng.Float64() < 0.25
+}
+
+func routeChoiceModifiers(rng *RNG, includeMerchant bool) []FloorModifier {
+	choices := make([]FloorModifier, 0, 3)
+	nonMerchant := make([]FloorModifier, 0, len(routePool))
+	for _, modifier := range routePool {
+		if modifier.Merchant {
+			if includeMerchant {
+				choices = append(choices, modifier)
+			}
+			continue
+		}
+		nonMerchant = append(nonMerchant, modifier)
+	}
+
+	for _, index := range rng.Perm(len(nonMerchant)) {
+		choices = append(choices, nonMerchant[index])
+		if len(choices) == 3 {
+			break
+		}
+	}
+
+	shuffled := make([]FloorModifier, 0, len(choices))
+	for _, index := range rng.Perm(len(choices)) {
+		shuffled = append(shuffled, choices[index])
+	}
+	return shuffled
 }
 
 func RandomEnemyTemplate(rng *RNG, floor int) EnemyTemplate {
@@ -324,8 +354,15 @@ func BossTemplateForFloor(rng *RNG, floor int, maxFloors int, endless bool) Enem
 func ScaleEnemyTemplate(template EnemyTemplate, floor int, persistentDifficulty int, elite bool, cursed bool) EnemyTemplate {
 	scaled := template
 	depthScale := max(0, floor-template.MinFloor)
-	scaled.MaxHP += depthScale*3 + persistentDifficulty*4
-	scaled.Attack += 1 + depthScale*2/3 + persistentDifficulty
+	scaled.MaxHP += 2 + floor/2 + depthScale*3 + persistentDifficulty*4
+	attackBonus := 1 + depthScale*2/3 + persistentDifficulty
+	if floor >= 4 && scaled.BossTier == 0 {
+		attackBonus++
+	}
+	if floor <= 2 && scaled.BossTier == 0 && !elite && !cursed {
+		attackBonus--
+	}
+	scaled.Attack += attackBonus
 	scaled.Defense += depthScale/3 + persistentDifficulty/2
 	scaled.XPReward += depthScale*2 + persistentDifficulty*2
 	scaled.GoldMin += depthScale / 2
@@ -337,10 +374,13 @@ func ScaleEnemyTemplate(template EnemyTemplate, floor int, persistentDifficulty 
 		scaled.Defense++
 	}
 	if scaled.BossTier > 0 {
-		scaled.MaxHP += floor*3 + persistentDifficulty*10 + scaled.BossTier*12
-		scaled.Attack += floor/2 + scaled.BossTier*3
-		scaled.Defense += 1 + scaled.BossTier
-		scaled.BurstDamage += scaled.BossTier*3 + floor/5
+		scaled.MaxHP += floor*4 + persistentDifficulty*12 + scaled.BossTier*18
+		scaled.Attack += 1 + floor/2 + scaled.BossTier*4
+		scaled.Defense += 2 + scaled.BossTier*2
+		scaled.BurstDamage += scaled.BossTier*4 + floor/4
+		if scaled.EnrageAttackBonus > 0 {
+			scaled.EnrageAttackBonus += 2
+		}
 		if scaled.AttackStatusTurns > 0 {
 			scaled.AttackStatusTurns++
 		}

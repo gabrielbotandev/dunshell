@@ -523,16 +523,95 @@ func (m *Model) renderMapPanel(width int, height int, originX int, originY int) 
 		}
 	}
 	roomStates := floor.RoomStates()
-	rows := make([]string, innerHeight)
+	cellRows := make([][]string, innerHeight)
 	for y := 0; y < innerHeight; y++ {
 		cells := make([]string, innerWidth)
 		for x := 0; x < innerWidth; x++ {
 			pos := game.Position{X: cameraX + x, Y: cameraY + y}
 			cells[x] = m.renderMapCell(pos, enemyMap, itemMap, chestMap, merchantMap, roomStates)
 		}
-		rows[y] = strings.Join(cells, "")
+		cellRows[y] = cells
+	}
+	m.applyEnemyOverlays(cellRows, enemyMap, cameraX, cameraY, innerWidth, innerHeight)
+	rows := make([]string, innerHeight)
+	for y := range cellRows {
+		rows[y] = strings.Join(cellRows[y], "")
 	}
 	return m.styles.box("Dungeon", strings.Join(rows, "\n"), width, height)
+}
+
+func (m *Model) applyEnemyOverlays(rows [][]string, enemies map[game.Position]*game.Enemy, cameraX int, cameraY int, width int, height int) {
+	for pos, enemy := range enemies {
+		if enemy == nil {
+			continue
+		}
+		screenX := pos.X - cameraX
+		screenY := pos.Y - cameraY
+		if screenX < 0 || screenX >= width || screenY <= 0 || screenY >= height {
+			continue
+		}
+
+		overlay := m.enemyOverlayCells(enemy)
+		if len(overlay) == 0 {
+			continue
+		}
+		startX := clamp(screenX-len(overlay)/2, 0, max(0, width-len(overlay)))
+		row := screenY - 1
+		for index, cell := range overlay {
+			if startX+index < 0 || startX+index >= len(rows[row]) {
+				continue
+			}
+			rows[row][startX+index] = cell
+		}
+	}
+}
+
+func (m *Model) enemyOverlayCells(enemy *game.Enemy) []string {
+	if enemy == nil || enemy.Template.MaxHP <= 0 {
+		return nil
+	}
+
+	barWidth := 4
+	if enemy.Elite {
+		barWidth = 5
+	}
+	if enemy.Template.BossTier > 0 {
+		barWidth = 6
+	}
+
+	filled := enemy.HP * barWidth / max(1, enemy.Template.MaxHP)
+	if enemy.HP > 0 && filled == 0 {
+		filled = 1
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+
+	fillColor := lipgloss.Color("#d06d6d")
+	switch {
+	case enemy.HP*100 > enemy.Template.MaxHP*65:
+		fillColor = lipgloss.Color("#c8b56d")
+	case enemy.HP*100 > enemy.Template.MaxHP*35:
+		fillColor = lipgloss.Color("#d08e6d")
+	}
+	fillStyle := lipgloss.NewStyle().Foreground(fillColor)
+	emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3c2a2a"))
+	levelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#d8d0c4")).Bold(true)
+	levelLabel := fmt.Sprintf("%d", enemy.Level)
+
+	cells := make([]string, 0, barWidth+1+len(levelLabel))
+	for index := 0; index < barWidth; index++ {
+		if index < filled {
+			cells = append(cells, fillStyle.Render("█"))
+			continue
+		}
+		cells = append(cells, emptyStyle.Render("░"))
+	}
+	cells = append(cells, levelStyle.Render("·"))
+	for _, ch := range levelLabel {
+		cells = append(cells, levelStyle.Render(string(ch)))
+	}
+	return cells
 }
 
 func (m *Model) renderMapCell(pos game.Position, enemies map[game.Position]*game.Enemy, items map[game.Position]game.GroundItem, chests map[game.Position]game.Chest, merchants map[game.Position]game.Merchant, roomStates []game.RoomState) string {
@@ -678,7 +757,7 @@ func (m *Model) renderStatusSidebar(width int, height int) string {
 	completion := m.game.Floor.Completion()
 	stats := []string{
 		m.renderStatBar("HP", player.HP, player.MaxHP(), width-4, lipgloss.Color("#c56b78"), lipgloss.Color("#2d1d23")),
-		m.renderStatBar("XP", player.XP, player.NextLevelXP(), width-4, lipgloss.Color("#5d88aa"), lipgloss.Color("#18232d")),
+		m.renderXPBar(player, width-4),
 		"",
 		"Lvl   " + m.styles.AccentSoft.Render(fmt.Sprintf("%d", player.Level)) + "   Gold " + m.styles.Gold.Render(fmt.Sprintf("%d", player.Gold)),
 		"ATK   " + m.styles.Attack.Render(fmt.Sprintf("%d", player.AttackPower())) + "   DEF  " + m.styles.Defense.Render(fmt.Sprintf("%d", player.DefensePower())),
@@ -898,7 +977,10 @@ func (m *Model) renderConsumableEffects(item game.Item) string {
 	if item.FireCure {
 		parts = append(parts, m.styles.Ember.Render("quench fire"))
 	}
-	if item.FocusTurns > 0 {
+	if item.FocusFloors > 0 {
+		parts = append(parts, m.styles.Focus.Render(fmt.Sprintf("focus +%d", item.FocusBonus)))
+		parts = append(parts, m.styles.Focus.Render(fmt.Sprintf("%df", item.FocusFloors)))
+	} else if item.FocusTurns > 0 {
 		parts = append(parts, m.styles.Focus.Render(fmt.Sprintf("focus +%d", item.FocusBonus)))
 		parts = append(parts, m.styles.Focus.Render(fmt.Sprintf("%dt", item.FocusTurns)))
 	}
@@ -1268,6 +1350,18 @@ func (m *Model) renderStatBar(label string, current int, total int, width int, f
 	barWidth := clamp(width-lipgloss.Width(label)-lipgloss.Width(numeric)-2, 10, 16)
 	bar := compactBar(current, total, barWidth, fill, track)
 	return lipgloss.NewStyle().Width(width).Render(label + " " + numeric + " " + bar)
+}
+
+func (m *Model) renderXPBar(player *game.Player, width int) string {
+	if player == nil {
+		return ""
+	}
+	total := max(1, player.NextLevelXP())
+	percent := float64(player.XP) * 100 / float64(total)
+	numeric := m.styles.Quantity.Render(fmt.Sprintf("%.2f%%", percent))
+	barWidth := clamp(width-lipgloss.Width("XP")-lipgloss.Width(numeric)-2, 10, 16)
+	bar := compactBar(player.XP, total, barWidth, lipgloss.Color("#5d88aa"), lipgloss.Color("#18232d"))
+	return lipgloss.NewStyle().Width(width).Render("XP " + numeric + " " + bar)
 }
 
 func compactBar(current int, total int, width int, fill lipgloss.Color, track lipgloss.Color) string {

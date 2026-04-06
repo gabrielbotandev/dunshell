@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+- Softened early-floor combat pressure by slightly reducing floor 1-2 enemy damage scaling, trimming early enemy counts, and increasing `Healing Salve` recovery so the opening run stays dangerous but fairer.
+- Reworked early sustain and starting gear around a heavier opening loadout: five `Healing Salve`s, no starting `Sunbrew Tonic`, stronger low-tier weapons and armor, and broader item stat ranges.
+- Slowed level progression by reducing effective XP earned from kills so the run leans more on loot and routing than rapid stat snowballing.
+- Rebuilt level progression around tiny percentage-based XP gains per encounter, now factoring player level, enemy level, floor level, enemy threat, and current gear so early leveling no longer snowballs by floor 3.
+- Expanded equipment variety with more weapons, armor pieces, and charms across the early and mid floors, plus slightly richer merchant stock and rare premium merchant rolls.
+- Made merchant routes much rarer in route maps and reduced incidental merchant spawns so merchants stay a strategic spike instead of a near-every-floor expectation.
+- Refactored `Sunbrew Tonic` and similar positive duration effects to work on floor duration instead of turn duration, keeping movement from wasting the item immediately.
+- Increased global enemy health scaling and made bosses notably tougher so upgraded gear matters without flattening the game into easy mode.
+- Added explicit enemy levels per floor and floating enemy health bars with level tags on the map to make encounter threat easier to read moment to moment.
+
 ## 0.3.2
 
 ### Added
